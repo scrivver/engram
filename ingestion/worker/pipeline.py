@@ -6,10 +6,10 @@ from . import db, extractors, storage, tagger
 log = logging.getLogger("engram-worker")
 
 
-def process(file_id: str, object_key: str, bucket: str, filename: str):
+def process(file_id: str, file_path: str, filename: str, storage_type: str):
     tmp_path = None
     try:
-        tmp_path = storage.download_file(object_key, bucket)
+        tmp_path = storage.get_file(file_path, storage_type)
 
         mime_type = extractors.detect_mime(tmp_path)
         log.info("file_id=%s mime=%s", file_id, mime_type)
@@ -33,5 +33,6 @@ def process(file_id: str, object_key: str, bucket: str, filename: str):
         log.info("file_id=%s status=ready tags=%s", file_id, tags)
 
     finally:
-        if tmp_path and os.path.exists(tmp_path):
+        # Only clean up temp files (S3 downloads), not original fs files
+        if tmp_path and storage_type == "s3" and os.path.exists(tmp_path):
             os.unlink(tmp_path)

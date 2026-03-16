@@ -7,6 +7,45 @@ def _connect():
     return psycopg2.connect(host=os.environ.get("PGHOST", "/tmp"), dbname="engram")
 
 
+def insert_file(
+    file_path: str,
+    filename: str,
+    size: int,
+    hash_value: str,
+    mtime: str,
+    device_name: str,
+    storage_type: str,
+) -> str | None:
+    """Insert a new file record. Returns file_id, or None if duplicate."""
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            # Check for duplicate
+            cur.execute("SELECT id FROM files WHERE hash = %s", (hash_value,))
+            if cur.fetchone():
+                return None
+
+            # Upsert device
+            cur.execute(
+                """INSERT INTO devices (name) VALUES (%s)
+                   ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                   RETURNING id""",
+                (device_name,),
+            )
+            device_id = cur.fetchone()[0]
+
+            # Insert file
+            cur.execute(
+                """INSERT INTO files (filename, size, hash, file_path, device_id, status, storage_type, mtime)
+                   VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
+                   RETURNING id""",
+                (filename, size, hash_value, file_path, device_id, storage_type, mtime),
+            )
+            file_id = str(cur.fetchone()[0])
+
+        conn.commit()
+        return file_id
+
+
 def update_file_status(file_id: str, status: str):
     with _connect() as conn:
         with conn.cursor() as cur:
