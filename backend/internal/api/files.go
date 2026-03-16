@@ -26,9 +26,9 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(q.Get("offset"))
 
 	query := `
-		SELECT DISTINCT f.id, f.filename, f.size, f.hash, f.original_path, f.device_id, d.name,
-		       f.status, f.object_key, f.storage_bucket, f.mime_type, f.page_count,
-		       f.mtime, f.archival_timestamp, f.created_at, f.updated_at
+		SELECT DISTINCT f.id, f.filename, f.size, f.hash, f.file_path, f.device_id, d.name,
+		       f.status, f.storage_type, f.mime_type, f.page_count,
+		       f.mtime, f.created_at, f.updated_at
 		FROM files f
 		JOIN devices d ON f.device_id = d.id`
 
@@ -86,9 +86,9 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var f model.File
 		if err := rows.Scan(
-			&f.ID, &f.Filename, &f.Size, &f.Hash, &f.OriginalPath, &f.DeviceID, &f.DeviceName,
-			&f.Status, &f.ObjectKey, &f.StorageBucket, &f.MimeType, &f.PageCount,
-			&f.Mtime, &f.ArchivalTimestamp, &f.CreatedAt, &f.UpdatedAt,
+			&f.ID, &f.Filename, &f.Size, &f.Hash, &f.FilePath, &f.DeviceID, &f.DeviceName,
+			&f.Status, &f.StorageType, &f.MimeType, &f.PageCount,
+			&f.Mtime, &f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			log.Printf("scan file: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -106,15 +106,15 @@ func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 
 	var f model.File
 	err := s.db.QueryRow(r.Context(),
-		`SELECT f.id, f.filename, f.size, f.hash, f.original_path, f.device_id, d.name,
-		        f.status, f.object_key, f.storage_bucket, f.mime_type, f.page_count,
-		        f.extracted_text, f.mtime, f.archival_timestamp, f.created_at, f.updated_at
+		`SELECT f.id, f.filename, f.size, f.hash, f.file_path, f.device_id, d.name,
+		        f.status, f.storage_type, f.mime_type, f.page_count,
+		        f.extracted_text, f.mtime, f.created_at, f.updated_at
 		 FROM files f JOIN devices d ON f.device_id = d.id
 		 WHERE f.id = $1`, id,
 	).Scan(
-		&f.ID, &f.Filename, &f.Size, &f.Hash, &f.OriginalPath, &f.DeviceID, &f.DeviceName,
-		&f.Status, &f.ObjectKey, &f.StorageBucket, &f.MimeType, &f.PageCount,
-		&f.ExtractedText, &f.Mtime, &f.ArchivalTimestamp, &f.CreatedAt, &f.UpdatedAt,
+		&f.ID, &f.Filename, &f.Size, &f.Hash, &f.FilePath, &f.DeviceID, &f.DeviceName,
+		&f.Status, &f.StorageType, &f.MimeType, &f.PageCount,
+		&f.ExtractedText, &f.Mtime, &f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
 		http.Error(w, "file not found", http.StatusNotFound)

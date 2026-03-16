@@ -9,16 +9,14 @@ CREATE TABLE IF NOT EXISTS files (
     filename            TEXT NOT NULL,
     size                BIGINT NOT NULL,
     hash                TEXT NOT NULL,
-    original_path       TEXT NOT NULL,
+    file_path           TEXT NOT NULL,
     device_id           UUID NOT NULL REFERENCES devices(id),
     status              TEXT NOT NULL DEFAULT 'pending',
-    object_key          TEXT,
-    storage_bucket      TEXT,
+    storage_type        TEXT NOT NULL DEFAULT 'fs',
     mime_type           TEXT,
     page_count          INTEGER,
     extracted_text      TEXT,
     mtime               TIMESTAMPTZ NOT NULL,
-    archival_timestamp  TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
