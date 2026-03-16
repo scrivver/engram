@@ -8,12 +8,15 @@
         RABBITMQ_DIR="$DATA_DIR/rabbitmq"
         mkdir -p "$RABBITMQ_DIR"
 
-        # Pick an ephemeral port for AMQP and management
-        AMQP_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
-        MGMT_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+        # Pick ports in a safe range (RabbitMQ adds 20000 for Erlang dist port,
+        # so AMQP port must be below 45535 to keep dist port under 65535)
+        AMQP_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); p=s.getsockname()[1]; s.close(); print(p if p < 45000 else p - 30000)')
+        MGMT_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); p=s.getsockname()[1]; s.close(); print(p)')
+        DIST_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); p=s.getsockname()[1]; s.close(); print(p)')
         echo "$AMQP_PORT" > "$RABBITMQ_DIR/amqp_port"
         echo "$MGMT_PORT" > "$RABBITMQ_DIR/mgmt_port"
 
+        export RABBITMQ_DIST_PORT="$DIST_PORT"
         export RABBITMQ_MNESIA_BASE="$RABBITMQ_DIR/mnesia"
         export RABBITMQ_LOG_BASE="$RABBITMQ_DIR/log"
         export RABBITMQ_SCHEMA_DIR="$RABBITMQ_DIR/schema"

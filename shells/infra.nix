@@ -8,6 +8,7 @@ pkgs.mkShell {
     pkgs.process-compose
     pkgs.python3
     pkgs.curl
+    pkgs.nodejs_24
   ];
 
   shellHook = ''
@@ -31,5 +32,10 @@ pkgs.mkShell {
 
     # Postgres uses unix socket directly — socket dir is $DATA_DIR/postgres
     export PGHOST="$DATA_DIR/postgres"
+
+    # Filesystem storage root (default backend)
+    export STORAGE_BACKEND="fs"
+    export STORAGE_FS_ROOT="$DATA_DIR/storage"
+    mkdir -p "$STORAGE_FS_ROOT"
   '';
 }

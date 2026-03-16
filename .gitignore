@@ -1,1 +1,5 @@
 .data
+__pycache__/
+*.pyc
+erl_crash.dump
+backend/tmp/

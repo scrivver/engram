@@ -1,50 +1,56 @@
-{ pkgs, dbName ? "engram" }:
+{ pkgs, databases ? [ "engram" ] }:
+let
+  createDbCommands = builtins.concatStringsSep "\n" (map (db: ''
+    if ! psql -h "$DATA_DIR/postgres" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -q 1; then
+      echo "Creating database '${db}'..."
+      createdb -h "$DATA_DIR/postgres" "${db}"
+    else
+      echo "Database '${db}' already exists."
+    fi
+  '') databases);
+in
 {
   processes = {
     postgres = {
       command = pkgs.writeShellScript "start-postgres" ''
         set -euo pipefail
+        PGDATA="$DATA_DIR/postgres"
 
-        PG_DIR="$DATA_DIR/postgres"
-        mkdir -p "$PG_DIR"
-
-        PGDATA="$PG_DIR/data"
-
-        # Initialise cluster if not present
         if [ ! -f "$PGDATA/PG_VERSION" ]; then
-          ${pkgs.postgresql}/bin/initdb -D "$PGDATA" --no-locale --encoding=UTF8
-          echo "unix_socket_directories = '$PG_DIR'" >> "$PGDATA/postgresql.conf"
-          echo "listen_addresses = '''" >> "$PGDATA/postgresql.conf"
+          echo "Initializing PostgreSQL database..."
+          initdb -D "$PGDATA" --no-locale --encoding=UTF8
+          cat >> "$PGDATA/postgresql.conf" <<CONF
+        unix_socket_directories = '$PGDATA'
+        listen_addresses = '''
+        CONF
         fi
 
-        echo "PostgreSQL starting on unix socket: $PG_DIR/.s.PGSQL.5432"
-
-        exec ${pkgs.postgresql}/bin/postgres -D "$PGDATA" -k "$PG_DIR"
+        exec postgres -D "$PGDATA"
       '';
       readiness_probe = {
-        exec.command = pkgs.writeShellScript "postgres-ready" ''
-          PG_DIR="$DATA_DIR/postgres"
-          ${pkgs.postgresql}/bin/pg_isready -h "$PG_DIR" -q
+        exec.command = pkgs.writeShellScript "pg-ready" ''
+          pg_isready -h "$DATA_DIR/postgres" -d postgres
         '';
-        initial_delay_seconds = 3;
+        initial_delay_seconds = 2;
         period_seconds = 2;
+      };
+      shutdown = {
+        command = pkgs.writeShellScript "stop-postgres" ''
+          pg_ctl -D "$DATA_DIR/postgres" stop -m fast
+        '';
       };
     };
 
-    postgres-create-db = {
-      command = pkgs.writeShellScript "postgres-create-db" ''
-        PG_DIR="$DATA_DIR/postgres"
-        ${pkgs.postgresql}/bin/createdb -h "$PG_DIR" "${dbName}" 2>/dev/null || true
-        echo "Database '${dbName}' ready on unix socket: $PG_DIR"
+    postgres-init = {
+      command = pkgs.writeShellScript "init-databases" ''
+        set -euo pipefail
+        ${createDbCommands}
+        echo "All databases ensured."
       '';
-      depends_on = {
-        postgres.condition = "process_healthy";
-      };
-      availability = {
-        restart = "no";
-      };
+      depends_on.postgres.condition = "process_healthy";
+      availability.restart = "no";
     };
   };
 
-  inherit dbName;
+  socketDir = "$DATA_DIR/postgres";
 }
