@@ -30,11 +30,14 @@ fi
 
 source load-infra-env
 
-# Backend window.
+# Backend window (read-only API).
 start-backend
 
 # Ingestion worker window.
 start-ingestion
+
+# Filesystem watcher window.
+start-watcher
 
 # Select backend window and attach.
 tmux select-window -t "$SESSION:backend" 2>/dev/null || true

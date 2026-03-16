@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -z "${DATA_DIR:-}" ]; then
+  echo "ERROR: DATA_DIR is not set. Are you in the dev shell? (nix develop)" >&2
+  exit 1
+fi
+
+source load-infra-env
+
+API="http://localhost:8080"
+WATCH_DIR="$DATA_DIR/watch"
+mkdir -p "$WATCH_DIR"
+
+echo "=== Dropping test file into $WATCH_DIR ==="
+echo "This is a test file for engram metadata extraction." > "$WATCH_DIR/test-document.txt"
+
+echo "=== Polling for file to appear in API ==="
+for i in $(seq 1 30); do
+  RESULT=$(curl -sf "$API/api/files?q=test-document&status=ready" 2>/dev/null || echo "[]")
+  COUNT=$(echo "$RESULT" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+  if [ "$COUNT" -gt 0 ]; then
+    echo ""
+    echo "=== File metadata ==="
+    echo "$RESULT" | python3 -m json.tool
+    echo ""
+    echo "=== All tags ==="
+    curl -sf "$API/api/tags" | python3 -m json.tool
+    echo ""
+    echo "=== All devices ==="
+    curl -sf "$API/api/devices" | python3 -m json.tool
+    echo ""
+    echo "Test passed!"
+    exit 0
+  fi
+  echo "  waiting... ($i/30)"
+  sleep 1
+done
+
+echo "ERROR: File did not appear in API within 30s"
+echo "Check watcher and ingestion worker logs."
+exit 1

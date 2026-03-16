@@ -4,22 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Engram is the server-side metadata extraction layer for the Mind Palace archival system. It receives file uploads from client daemons, extracts rich metadata via a background worker, and provides an API to query indexed file metadata.
+Engram is the server-side metadata extraction layer for the Mind Palace archival system. Files arrive via storage events (filesystem changes or S3 bucket notifications), metadata is extracted by a background worker, and a read-only API provides search and query access to the indexed metadata.
 
 ## Architecture
 
 ```
-Client Upload → Go Backend API → RabbitMQ (engram.ingest queue) → Python Ingestion Worker → PostgreSQL
-                     ↓
-              Storage (fs or S3)
+Path 1 (fs):   Go watcher (fsnotify) → RabbitMQ → Python worker → PostgreSQL
+Path 2 (S3):   MinIO/S3 bucket notification → RabbitMQ → Python worker → PostgreSQL
+
+API:            PostgreSQL ← read-only queries ← clients
 ```
 
-- **Go backend** (`backend/`): HTTP API server using stdlib `net/http` with Go 1.22+ routing patterns. Handles uploads, stores files, publishes jobs to RabbitMQ, serves metadata queries.
-- **Python ingestion worker** (`ingestion/`): Consumes from RabbitMQ, downloads files from storage, extracts metadata (MIME, text, page count), auto-tags, writes results to PostgreSQL.
-- **Storage interface** (`backend/internal/storage/storage.go`): `Store` interface with filesystem (`fs.go`) and S3 (`s3.go`) implementations. Selected via `STORAGE_BACKEND` env var (`fs` default).
-- **Database migrations** are embedded in the Go binary via `//go:embed` and run at startup using `golang-migrate`.
+Three separate components:
 
-File lifecycle: upload → status `pending` → worker sets `processing` → extraction → status `ready` (or `failed`).
+- **Go backend API** (`backend/`): Read-only metadata queries using stdlib `net/http`. Only depends on PostgreSQL — no storage, no RabbitMQ.
+- **Go filesystem watcher** (`watcher/`): Separate binary. Watches directories via fsnotify, publishes file events to RabbitMQ. Deployed independently.
+- **Python ingestion worker** (`ingestion/`): Consumes events from RabbitMQ, reads files (from filesystem or S3), extracts metadata (MIME, text, page count), auto-tags, inserts records into PostgreSQL.
+
+**No file upload or download through the API.** Files are accessed directly from storage.
+
+Database migrations are embedded in the Go backend binary via `//go:embed` and run at startup using `golang-migrate`.
+
+File lifecycle: event received → worker inserts record as `pending` → sets `processing` → extraction → `ready` (or `failed`).
 
 ## Development
 
@@ -30,30 +36,28 @@ Nix with flakes enabled.
 ### Quick Start
 
 ```bash
-nix develop        # Enter full dev shell (Go + Python + infra tools)
-bin/dev            # Launches tmux session: infra (PG + RabbitMQ), backend (air), ingestion (uv run)
+nix develop        # Enter full dev shell
+bin/dev            # Launches tmux: infra, backend, ingestion, watcher
 ```
 
-### Individual Components
-
-```bash
-bin/start-infra           # Start PostgreSQL + RabbitMQ via process-compose
-source bin/load-infra-env # Export PGHOST, RABBITMQ_AMQP_PORT, RABBITMQ_MGMT_PORT
-bin/shutdown-infra        # Stop services
-```
+Drop files into `.data/watch/` to trigger ingestion.
 
 ### Build & Run
 
 ```bash
-# Backend
+# Backend (read-only API)
 cd backend && go build ./...
-cd backend && air                    # Hot reload (needs infra env vars)
+cd backend && air                    # Hot reload (needs PGHOST)
+
+# Watcher
+cd watcher && go build ./...
+cd watcher && WATCH_DIRS=.data/watch go run .   # Needs RABBITMQ_AMQP_PORT
 
 # Ingestion worker
-cd ingestion && uv run main.py       # Needs infra env vars
+cd ingestion && uv run main.py       # Needs PGHOST + RABBITMQ_AMQP_PORT
 
 # Integration test (requires all services running)
-bin/test-upload
+bin/test-ingest
 ```
 
 ### Dev Shells
@@ -62,6 +66,7 @@ bin/test-upload
 |-------|---------|----------|
 | `infra` | `nix develop .#infra` | PostgreSQL, RabbitMQ, process-compose |
 | `backend` | `nix develop .#backend` | infra + Go, gopls, air |
+| `watcher` | `nix develop .#watcher` | same as backend |
 | `ingestion` | `nix develop .#ingestion` | infra + Python 3.13, uv, ruff, libmagic |
 | `full` (default) | `nix develop` | backend + ingestion combined |
 
@@ -73,31 +78,42 @@ bin/test-upload
 
 ## Key Environment Variables
 
+### Backend API
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8080` | HTTP listen port |
+| `PGHOST` | (required) | PostgreSQL unix socket directory |
+
+### Watcher
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WATCH_DIRS` | (required) | Comma-separated directories to watch |
+| `DEVICE_NAME` | hostname | Device identifier |
+| `RABBITMQ_AMQP_PORT` | `5672` | RabbitMQ AMQP port |
+
+### Ingestion Worker
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PGHOST` | (required) | PostgreSQL unix socket directory |
 | `RABBITMQ_AMQP_PORT` | `5672` | RabbitMQ AMQP port |
-| `STORAGE_BACKEND` | `fs` | `fs` or `s3` |
-| `STORAGE_FS_ROOT` | `.data/storage` | Filesystem storage root |
-| `STORAGE_S3_ENDPOINT` | — | S3 endpoint (required when `s3`) |
-| `STORAGE_S3_ACCESS_KEY` | — | S3 access key (required when `s3`) |
-| `STORAGE_S3_SECRET_KEY` | — | S3 secret key (required when `s3`) |
-| `STORAGE_S3_BUCKET` | `engram` | S3 bucket name |
 
-## API Endpoints
+S3 env vars (`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`, `STORAGE_S3_BUCKET`) only needed when processing S3 events.
 
-- `POST /api/files` — Multipart upload (`file` + `metadata` JSON with filename, size, path, device_name, hash, mtime)
+## API Endpoints (read-only)
+
+- `GET /api/health` — Health check
 - `GET /api/files` — List/search (params: `q`, `tag`, `device`, `status`, `limit`, `offset`)
 - `GET /api/files/{id}` — Full file detail with extracted_text and tags
-- `GET /api/files/{id}/download` — Download file (S3: 302 redirect to presigned URL; fs: stream)
 - `GET /api/tags` — All tags with file counts
 - `GET /api/devices` — All devices
-- `GET /api/health` — Health check
 
 ## Conventions
 
 - Go backend uses no web framework — stdlib `net/http` only.
+- Backend has no storage or queue dependencies — only PostgreSQL.
+- The watcher is a separate Go module (`watcher/`) with its own `go.mod`.
 - Python dependencies managed by `uv` (not pip). Add deps with `uv add <pkg>` from `ingestion/`.
 - Nix infra processes are defined in `infra/*.nix` and composed into `process-compose.yaml` via `flake.nix`.
 - PostgreSQL connections always use unix sockets for local dev. Do not configure TCP listeners.
-- RabbitMQ queue `engram.ingest` is declared as durable by both the Go publisher and Python consumer.
+- RabbitMQ queue `engram.ingest` is declared as durable by all producers and the consumer.
+- The Python worker handles two message formats: filesystem watcher events and S3 bucket notifications.

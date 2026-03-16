@@ -4,29 +4,28 @@ An engram is a unit of cognitive information imprinted in the mind palace. It is
 
 > You never forget anything, you just have to find the right engram.
 
-Engram is the server-side metadata extraction layer for the mind palace archival system. It receives file uploads from client daemons, extracts rich metadata in the background, and provides an API to search and query indexed files.
+Engram is the server-side metadata extraction layer for the mind palace archival system. Files arrive via storage events (filesystem changes or S3 bucket notifications), metadata is extracted in the background, and a read-only API provides search and query access to the indexed metadata.
 
 ## How It Works
 
 ```
-Client Upload → Go API → Storage (fs/S3) + RabbitMQ → Python Worker → PostgreSQL
-                                                            ↓
-                                                   MIME detection, text extraction,
-                                                   page count, auto-tagging
+Path 1 (filesystem):  Go watcher (fsnotify) → RabbitMQ → Python worker → PostgreSQL
+Path 2 (S3):          MinIO/S3 bucket notification → RabbitMQ → Python worker → PostgreSQL
+
+API:                  PostgreSQL ← read-only queries ← clients
 ```
 
-1. A client uploads a file to the Go backend API
-2. The backend stores the file and publishes a job to RabbitMQ
-3. The Python ingestion worker picks up the job, extracts metadata (MIME type, text content, page count), generates tags, and writes everything to PostgreSQL
-4. The API serves queries against the indexed metadata — search by filename, filter by tags or device, download files
+1. A file appears in storage (written to a watched directory, or uploaded to an S3 bucket)
+2. An event is published to RabbitMQ (by the Go watcher for filesystem, or by MinIO natively for S3)
+3. The Python ingestion worker picks up the event, reads the file, extracts metadata (MIME type, text content, page count), generates tags, and writes everything to PostgreSQL
+4. The API serves read-only queries against the indexed metadata — search by filename, filter by tags or device
 
 ## Stack
 
-- **Go** — Backend API server (stdlib `net/http`, no framework)
+- **Go** — Backend API server (read-only metadata queries) and filesystem watcher (separate binary)
 - **Python** — Ingestion worker for metadata extraction
 - **PostgreSQL** — Metadata database (unix socket, no TCP)
-- **RabbitMQ** — Job queue between API and worker
-- **S3-compatible storage** — File storage (filesystem by default, S3/MinIO optional)
+- **RabbitMQ** — Event queue between storage events and worker
 - **Nix flakes** — Development environment and service orchestration
 
 ## Prerequisites
@@ -50,12 +49,20 @@ nix develop    # Enter the development shell
 bin/dev
 ```
 
-This launches a tmux session with three windows:
+This launches a tmux session with four windows:
 - **infra** — PostgreSQL + RabbitMQ (via process-compose)
 - **backend** — Go API with hot reload (air)
 - **ingestion** — Python worker (uv run)
+- **watcher** — Go filesystem watcher (watches `.data/watch/`)
 
-Switch between windows with `Ctrl+b 0/1/2`. Detach with `Ctrl+b d`.
+Switch between windows with `Ctrl+b 0/1/2/3`. Detach with `Ctrl+b d`.
+
+To test, drop a file into `.data/watch/` and query the API:
+
+```bash
+cp some-file.pdf .data/watch/
+curl http://localhost:8080/api/files?status=ready
+```
 
 ### Manual Setup
 
@@ -72,6 +79,10 @@ cd backend && air
 # Terminal 3: Start ingestion worker
 source bin/load-infra-env
 cd ingestion && uv run main.py
+
+# Terminal 4: Start filesystem watcher
+source bin/load-infra-env
+cd watcher && WATCH_DIRS=.data/watch go run .
 ```
 
 ### Shell Commands
@@ -82,17 +93,17 @@ cd ingestion && uv run main.py
 | `bin/start-infra` | Start PostgreSQL + RabbitMQ |
 | `bin/shutdown-infra` | Stop infrastructure services |
 | `source bin/load-infra-env` | Export `PGHOST`, `RABBITMQ_AMQP_PORT` into current shell |
-| `bin/start-backend` | Start Go backend in a tmux window |
+| `bin/start-backend` | Start Go API in a tmux window |
 | `bin/start-ingestion` | Start Python worker in a tmux window |
-| `bin/test-upload` | Run end-to-end integration test |
+| `bin/start-watcher` | Start filesystem watcher in a tmux window |
+| `bin/test-ingest` | Run end-to-end integration test |
 
 ### Dev Shells
 
-Multiple Nix shells are available depending on what you're working on:
-
 ```bash
-nix develop           # Full shell (Go + Python + infra)
+nix develop              # Full shell (Go + Python + infra)
 nix develop .#backend    # Go backend only
+nix develop .#watcher    # Go watcher (same as backend)
 nix develop .#ingestion  # Python worker only
 nix develop .#infra      # Infrastructure tools only
 ```
@@ -103,6 +114,9 @@ nix develop .#infra      # Infrastructure tools only
 # Go backend
 cd backend && go build -o engram-backend
 
+# Go watcher
+cd watcher && go build -o engram-watcher
+
 # Python worker (dependencies managed by uv)
 cd ingestion && uv sync
 ```
@@ -110,8 +124,9 @@ cd ingestion && uv sync
 ### Adding Dependencies
 
 ```bash
-# Go
+# Go (backend or watcher)
 cd backend && go get <package>
+cd watcher && go get <package>
 
 # Python
 cd ingestion && uv add <package>
@@ -119,7 +134,7 @@ cd ingestion && uv add <package>
 
 ### Resetting State
 
-All runtime data (database, queues, stored files) lives in `.data/`. To start fresh:
+All runtime data (database, queues, watched files) lives in `.data/`. To start fresh:
 
 ```bash
 rm -rf .data/
@@ -127,34 +142,40 @@ rm -rf .data/
 
 ## API
 
+The backend API is read-only — it queries metadata from PostgreSQL. No file upload or download.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/health` | Health check |
-| `POST` | `/api/files` | Upload file (multipart: `file` + `metadata` JSON) |
 | `GET` | `/api/files` | List/search files (`?q=`, `?tag=`, `?device=`, `?status=`) |
-| `GET` | `/api/files/{id}` | Get file detail with extracted metadata |
-| `GET` | `/api/files/{id}/download` | Download file |
+| `GET` | `/api/files/{id}` | Get file detail with extracted metadata and tags |
 | `GET` | `/api/tags` | List all tags with file counts |
 | `GET` | `/api/devices` | List all devices |
 
-### Upload Example
-
-```bash
-curl -X POST http://localhost:8080/api/files \
-  -F "file=@document.pdf" \
-  -F 'metadata={"filename":"document.pdf","size":204800,"path":"/home/user/Documents/","device_name":"laptop","hash":"sha256:abc123","mtime":"2026-03-16T12:00:00Z"}'
-```
-
 ## Configuration
+
+### Backend API
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `8080` | API server port |
 | `PGHOST` | — | PostgreSQL unix socket directory |
+
+### Filesystem Watcher
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WATCH_DIRS` | — | Comma-separated directories to watch |
+| `DEVICE_NAME` | hostname | Device identifier |
 | `RABBITMQ_AMQP_PORT` | `5672` | RabbitMQ AMQP port |
-| `STORAGE_BACKEND` | `fs` | Storage backend: `fs` or `s3` |
-| `STORAGE_FS_ROOT` | `.data/storage` | Filesystem storage root |
-| `STORAGE_S3_ENDPOINT` | — | S3 endpoint URL |
+
+### Ingestion Worker
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PGHOST` | — | PostgreSQL unix socket directory |
+| `RABBITMQ_AMQP_PORT` | `5672` | RabbitMQ AMQP port |
+| `STORAGE_S3_ENDPOINT` | — | S3 endpoint (only for S3 storage type) |
 | `STORAGE_S3_ACCESS_KEY` | — | S3 access key |
 | `STORAGE_S3_SECRET_KEY` | — | S3 secret key |
 | `STORAGE_S3_BUCKET` | `engram` | S3 bucket name |
