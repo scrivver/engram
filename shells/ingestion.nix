@@ -4,11 +4,8 @@ pkgs.mkShell {
   name = "engram-ingestion-shell";
   inputsFrom = [ infraShell ];
   buildInputs = [
-    (pkgs.python3.withPackages (ps: with ps; [
-      pika        # RabbitMQ client
-      psycopg2    # PostgreSQL client
-      pip
-    ]))
-    pkgs.ruff     # Python linter/formatter
+    pkgs.python3
+    pkgs.uv
+    pkgs.ruff
   ];
 }

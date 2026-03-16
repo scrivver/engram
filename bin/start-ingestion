@@ -13,6 +13,6 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 tmux new-window -n ingestion 2>/dev/null \
   || tmux new-session -d -s ingestion -n ingestion
 
-tmux send-keys -t ingestion "cd $PROJECT_ROOT/ingestion && PGHOST=$PGHOST RABBITMQ_AMQP_PORT=$RABBITMQ_AMQP_PORT python3 -m engram_worker" Enter
+tmux send-keys -t ingestion "cd $PROJECT_ROOT/ingestion && PGHOST=$PGHOST RABBITMQ_AMQP_PORT=$RABBITMQ_AMQP_PORT uv run main.py" Enter
 
 echo "Ingestion worker started in tmux window 'ingestion'"
