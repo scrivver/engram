@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -z "${DATA_DIR:-}" ]; then
+  echo "ERROR: DATA_DIR is not set. Are you in the dev shell? (nix develop)" >&2
+  exit 1
+fi
+
+source load-infra-env
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+tmux new-window -n backend 2>/dev/null \
+  || tmux new-session -d -s backend -n backend
+
+tmux send-keys -t backend "cd $PROJECT_ROOT/backend && PGHOST=$PGHOST RABBITMQ_AMQP_PORT=$RABBITMQ_AMQP_PORT air" Enter
+
+echo "Backend started in tmux window 'backend'"

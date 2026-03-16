@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -z "${DATA_DIR:-}" ]; then
+  echo "ERROR: DATA_DIR is not set. Are you in the dev shell? (nix develop)" >&2
+  exit 1
+fi
+
+source load-infra-env
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+tmux new-window -n ingestion 2>/dev/null \
+  || tmux new-session -d -s ingestion -n ingestion
+
+tmux send-keys -t ingestion "cd $PROJECT_ROOT/ingestion && PGHOST=$PGHOST RABBITMQ_AMQP_PORT=$RABBITMQ_AMQP_PORT python3 -m engram_worker" Enter
+
+echo "Ingestion worker started in tmux window 'ingestion'"
