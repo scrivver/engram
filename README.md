@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="docs/banner.png" alt="Engram - Digital Memory Trace" width="640">
+  <img src="docs/banner.png" alt="Engram - Digital Memory Trace">
 </p>
+
 # Engram
 
 An engram is a unit of cognitive information imprinted in the mind palace. It is a memory trace that represents a specific experience, event, or piece of information.
