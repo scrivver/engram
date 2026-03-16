@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -z "${DATA_DIR:-}" ]; then
+  echo "ERROR: DATA_DIR is not set. Are you in the dev shell? (nix develop)" >&2
+  exit 1
+fi
+
+source load-infra-env
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Default watch directory for dev
+WATCH_DIR="${WATCH_DIRS:-$DATA_DIR/watch}"
+mkdir -p "$WATCH_DIR"
+
+tmux new-window -n watcher 2>/dev/null \
+  || tmux new-session -d -s watcher -n watcher
+
+tmux send-keys -t watcher "cd $PROJECT_ROOT/watcher && WATCH_DIRS=$WATCH_DIR RABBITMQ_AMQP_PORT=$RABBITMQ_AMQP_PORT go run ." Enter
+
+echo "Watcher started in tmux window 'watcher' (watching $WATCH_DIR)"

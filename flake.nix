@@ -27,6 +27,7 @@
 	devShells = rec {
 	  infra     = infraShell;
 	  backend   = backendShell;
+	  watcher   = backendShell;  # watcher uses same Go tools as backend
 	  ingestion = ingestionShell;
 	  full      = pkgs.mkShell {
 	    name = "engram-full-shell";
