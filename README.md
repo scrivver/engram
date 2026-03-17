@@ -188,6 +188,9 @@ The backend API is read-only — it queries metadata from PostgreSQL. No file up
 | `WATCH_DIRS` | — | Comma-separated directories to watch |
 | `DEVICE_NAME` | hostname | Device identifier |
 | `RABBITMQ_AMQP_PORT` | `5672` | RabbitMQ AMQP port |
+| `WATCH_IGNORE` | — | Extra comma-separated ignore patterns (added to defaults) |
+
+Default ignore patterns: `.git`, `.DS_Store`, `node_modules`, `__pycache__`, `.venv`, `.data`, `tmp`, and all dotfiles.
 
 ### Ingestion Worker
 

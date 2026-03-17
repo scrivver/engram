@@ -91,6 +91,7 @@ bin/test-ingest
 | `WATCH_DIRS` | (required) | Comma-separated directories to watch |
 | `DEVICE_NAME` | hostname | Device identifier |
 | `RABBITMQ_AMQP_PORT` | `5672` | RabbitMQ AMQP port |
+| `WATCH_IGNORE` | — | Extra comma-separated ignore patterns |
 
 ### Ingestion Worker
 | Variable | Default | Description |
@@ -118,3 +119,5 @@ S3 env vars (`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_
 - PostgreSQL connections always use unix sockets for local dev. Do not configure TCP listeners.
 - RabbitMQ queue `engram.ingest` is declared declaratively via `load_definitions` in `infra/rabbitmq.nix`. Do not rely on application code to create queues.
 - The Python worker handles two message formats: filesystem watcher events and S3 bucket notifications.
+- The Python worker auto-reconnects to RabbitMQ with exponential backoff on connection loss.
+- The watcher publishes `create`, `delete`, and `rename` events. It ignores dotfiles, `.git`, `node_modules`, `__pycache__`, and other common patterns by default.
