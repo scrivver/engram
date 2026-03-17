@@ -64,7 +64,7 @@ bin/test-ingest
 
 | Shell | Command | Contents |
 |-------|---------|----------|
-| `infra` | `nix develop .#infra` | PostgreSQL, RabbitMQ, process-compose |
+| `infra` | `nix develop .#infra` | PostgreSQL, RabbitMQ, MinIO, process-compose |
 | `backend` | `nix develop .#backend` | infra + Go, gopls, air |
 | `watcher` | `nix develop .#watcher` | same as backend |
 | `ingestion` | `nix develop .#ingestion` | infra + Python 3.13, uv, ruff, libmagic |
@@ -73,7 +73,8 @@ bin/test-ingest
 ### Infrastructure Notes
 
 - **PostgreSQL** uses unix socket only (no TCP). Socket at `.data/postgres/`. `PGHOST` points there.
-- **RabbitMQ** uses dynamically assigned ports written to `.data/rabbitmq/{amqp_port,mgmt_port}`.
+- **RabbitMQ** uses dynamically assigned ports written to `.data/rabbitmq/{amqp_port,mgmt_port}`. Queue `engram.ingest` and its binding to `amq.direct` are declared via `load_definitions` in the RabbitMQ config (see `infra/rabbitmq.nix`).
+- **MinIO** provides S3-compatible storage in dev with AMQP bucket notifications to RabbitMQ. Ports written to `.data/minio/{api_port,console_port}`.
 - All runtime data lives in `.data/` (gitignored). Delete it to reset state: `rm -rf .data/`
 
 ## Key Environment Variables
@@ -97,7 +98,7 @@ bin/test-ingest
 | `PGHOST` | (required) | PostgreSQL unix socket directory |
 | `RABBITMQ_AMQP_PORT` | `5672` | RabbitMQ AMQP port |
 
-S3 env vars (`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`, `STORAGE_S3_BUCKET`) only needed when processing S3 events.
+S3 env vars (`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`, `STORAGE_S3_BUCKET`) only needed when processing S3 events. In dev, `bin/load-infra-env` exports these automatically when MinIO is running.
 
 ## API Endpoints (read-only)
 
@@ -115,5 +116,5 @@ S3 env vars (`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_
 - Python dependencies managed by `uv` (not pip). Add deps with `uv add <pkg>` from `ingestion/`.
 - Nix infra processes are defined in `infra/*.nix` and composed into `process-compose.yaml` via `flake.nix`.
 - PostgreSQL connections always use unix sockets for local dev. Do not configure TCP listeners.
-- RabbitMQ queue `engram.ingest` is declared as durable by all producers and the consumer.
+- RabbitMQ queue `engram.ingest` is declared declaratively via `load_definitions` in `infra/rabbitmq.nix`. Do not rely on application code to create queues.
 - The Python worker handles two message formats: filesystem watcher events and S3 bucket notifications.

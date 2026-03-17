@@ -30,6 +30,7 @@ API:                  PostgreSQL ← read-only queries ← clients
 - **Python** — Ingestion worker for metadata extraction
 - **PostgreSQL** — Metadata database (unix socket, no TCP)
 - **RabbitMQ** — Event queue between storage events and worker
+- **MinIO** — S3-compatible object storage (dev infrastructure, with AMQP bucket notifications)
 - **Nix flakes** — Development environment and service orchestration
 
 ## Prerequisites
@@ -54,18 +55,26 @@ bin/dev
 ```
 
 This launches a tmux session with four windows:
-- **infra** — PostgreSQL + RabbitMQ (via process-compose)
+- **infra** — PostgreSQL + RabbitMQ + MinIO (via process-compose)
 - **backend** — Go API with hot reload (air)
 - **ingestion** — Python worker (uv run)
 - **watcher** — Go filesystem watcher (watches `.data/watch/`)
 
 Switch between windows with `Ctrl+b 0/1/2/3`. Detach with `Ctrl+b d`.
 
-To test, drop a file into `.data/watch/` and query the API:
+To test the filesystem path, drop a file into `.data/watch/`:
 
 ```bash
 cp some-file.pdf .data/watch/
 curl http://localhost:8080/api/files?status=ready
+```
+
+To test the S3 path, upload to MinIO:
+
+```bash
+source bin/load-infra-env
+mc alias set local $STORAGE_S3_ENDPOINT minioadmin minioadmin
+mc cp some-file.pdf local/engram/
 ```
 
 ### Manual Setup
@@ -94,7 +103,7 @@ cd watcher && WATCH_DIRS=.data/watch go run .
 | Command | Description |
 |---------|-------------|
 | `bin/dev` | Launch full dev environment in tmux |
-| `bin/start-infra` | Start PostgreSQL + RabbitMQ |
+| `bin/start-infra` | Start PostgreSQL + RabbitMQ + MinIO |
 | `bin/shutdown-infra` | Stop infrastructure services |
 | `source bin/load-infra-env` | Export `PGHOST`, `RABBITMQ_AMQP_PORT` into current shell |
 | `bin/start-backend` | Start Go API in a tmux window |
@@ -138,10 +147,17 @@ cd ingestion && uv add <package>
 
 ### Resetting State
 
-All runtime data (database, queues, watched files) lives in `.data/`. To start fresh:
+All runtime data (database, queues, watched files, MinIO storage) lives in `.data/`. To start fresh:
 
 ```bash
 rm -rf .data/
+```
+
+### Querying the Database
+
+```bash
+source bin/load-infra-env
+psql -h $PGHOST engram
 ```
 
 ## API
@@ -184,4 +200,4 @@ The backend API is read-only — it queries metadata from PostgreSQL. No file up
 | `STORAGE_S3_SECRET_KEY` | — | S3 secret key |
 | `STORAGE_S3_BUCKET` | `engram` | S3 bucket name |
 
-In development, `PGHOST` and `RABBITMQ_AMQP_PORT` are set automatically by the Nix shell and `bin/load-infra-env`.
+In development, `PGHOST`, `RABBITMQ_AMQP_PORT`, and S3 vars are set automatically by the Nix shell and `bin/load-infra-env`.
