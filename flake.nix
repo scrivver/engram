@@ -14,10 +14,11 @@
 	};
 	rabbitmqInfra = import ./infra/rabbitmq.nix { inherit pkgs; };
 	postgresInfra = import ./infra/postgres.nix { inherit pkgs; };
+	minioInfra = import ./infra/minio.nix { inherit pkgs; };
 	yamlFormat = pkgs.formats.yaml {};
 	processComposeConfig = yamlFormat.generate "process-compose.yaml" {
 	  version = "0.5";
-	  processes = rabbitmqInfra.processes // postgresInfra.processes;
+	  processes = rabbitmqInfra.processes // postgresInfra.processes // minioInfra.processes;
 	};
 	infraShell     = import ./shells/infra.nix { inherit pkgs processComposeConfig; };
 	backendShell   = import ./shells/backend.nix { inherit pkgs infraShell; };

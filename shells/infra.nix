@@ -5,6 +5,8 @@ pkgs.mkShell {
   buildInputs = [
     pkgs.rabbitmq-server
     pkgs.postgresql
+    pkgs.minio
+    pkgs.minio-client
     pkgs.process-compose
     pkgs.python3
     pkgs.curl
@@ -19,6 +21,7 @@ pkgs.mkShell {
     mkdir -p "$DATA_DIR"
     mkdir -p "$DATA_DIR/rabbitmq"
     mkdir -p "$DATA_DIR/postgres"
+    mkdir -p "$DATA_DIR/minio"
 
     # Generate process-compose config
     cp -f ${processComposeConfig} "$DATA_DIR/process-compose.yaml"
@@ -37,5 +40,9 @@ pkgs.mkShell {
     export STORAGE_BACKEND="fs"
     export STORAGE_FS_ROOT="$DATA_DIR/storage"
     mkdir -p "$STORAGE_FS_ROOT"
+
+    # MinIO S3 port files
+    export MINIO_API_PORT_FILE="$DATA_DIR/minio/api_port"
+    export MINIO_CONSOLE_PORT_FILE="$DATA_DIR/minio/console_port"
   '';
 }

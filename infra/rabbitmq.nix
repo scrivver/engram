@@ -1,4 +1,46 @@
-{ pkgs }:
+{ pkgs, queues ? [
+  { name = "engram.ingest"; durable = true; }
+] }:
+let
+  # Build definitions JSON declaratively
+  definitions = builtins.toJSON {
+    vhosts = [ { name = "/"; } ];
+
+    users = [ {
+      name = "guest";
+      password_hash = "/EKkHapb6J8jiJWy2l72TQt16OTLERZmJK5A8gUVYiguBGx5";
+      hashing_algorithm = "rabbit_password_hashing_sha256";
+      tags = [ "administrator" ];
+    } ];
+
+    permissions = [ {
+      user = "guest";
+      vhost = "/";
+      configure = ".*";
+      write = ".*";
+      read = ".*";
+    } ];
+
+    queues = map (q: {
+      name = q.name;
+      vhost = "/";
+      durable = q.durable;
+      auto_delete = false;
+      arguments = {};
+    }) queues;
+
+    bindings = map (q: {
+      source = "amq.direct";
+      vhost = "/";
+      destination = q.name;
+      destination_type = "queue";
+      routing_key = q.name;
+      arguments = {};
+    }) queues;
+  };
+
+  definitionsFile = pkgs.writeText "rabbitmq-definitions.json" definitions;
+in
 {
   processes = {
     rabbitmq = {
@@ -31,13 +73,14 @@
         # Enable management plugin
         echo '[rabbitmq_management].' > "$RABBITMQ_ENABLED_PLUGINS_FILE"
 
-        # Write config
+        # Write config with definitions import (reference nix store path directly)
         cat > "$RABBITMQ_DIR/rabbitmq.conf" <<RMQEOF
         listeners.tcp.default = $AMQP_PORT
         management.tcp.port = $MGMT_PORT
         default_user = guest
         default_pass = guest
         loopback_users = none
+        management.load_definitions = ${definitionsFile}
         RMQEOF
 
         export RABBITMQ_CONFIG_FILE="$RABBITMQ_DIR/rabbitmq"
