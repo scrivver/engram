@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+  cat <<'EOF'
+Usage: db [PSQL_ARGS...]
+
+Connect to the engram PostgreSQL database via psql.
+
+Examples:
+  db                          Open interactive psql session
+  db -c "\dt"                 List tables
+  db -c "SELECT * FROM files" Run a query
+  db -c "\l"                  List all databases
+EOF
+  exit 0
+fi
+
+exec psql -h "$DATA_DIR/postgres" -d engram "$@"
