@@ -12,14 +12,14 @@ def extract_pdf(filepath: str) -> dict:
     text_parts = []
     for page in doc:
         text_parts.append(page.get_text())
+    page_count = doc.page_count
     doc.close()
 
     text = "\n".join(text_parts).strip()
-    # Truncate to 100KB
     if len(text) > 100_000:
         text = text[:100_000]
 
-    return {"text": text, "page_count": len(doc)}
+    return {"text": text, "page_count": page_count}
 
 
 def extract_image(filepath: str) -> dict:
