@@ -88,6 +88,7 @@ def on_message(channel, method, properties, body):
             file_path=parsed["file_path"],
             filename=parsed["filename"],
             storage_type=parsed["storage_type"],
+            mtime=parsed.get("mtime"),
         )
 
         channel.basic_ack(delivery_tag=method.delivery_tag)

@@ -7,7 +7,8 @@ pkgs.mkShell {
     pkgs.python3
     pkgs.uv
     pkgs.ruff
-    pkgs.file  # provides libmagic for python-magic
+    pkgs.file    # provides libmagic for python-magic
+    pkgs.ffmpeg  # provides ffprobe for audio/video metadata
   ];
 
   shellHook = ''
