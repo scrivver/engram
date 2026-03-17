@@ -23,7 +23,7 @@ func main() {
 	}
 	defer pub.Close()
 
-	w, err := watcher.New(pub, cfg.DeviceName)
+	w, err := watcher.New(pub, cfg.DeviceName, cfg.IgnorePatterns)
 	if err != nil {
 		log.Fatalf("watcher: %v", err)
 	}
@@ -36,10 +36,11 @@ func main() {
 		}
 	}
 
+	log.Printf("Engram watcher running (device=%s, ignoring=%v)", cfg.DeviceName, cfg.IgnorePatterns)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("Engram watcher running (device=%s)", cfg.DeviceName)
 	if err := w.Run(ctx); err != nil {
 		log.Fatalf("watcher: %v", err)
 	}

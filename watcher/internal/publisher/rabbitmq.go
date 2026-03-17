@@ -20,6 +20,7 @@ type FileEvent struct {
 	Mtime       string `json:"mtime"`
 	DeviceName  string `json:"device_name"`
 	StorageType string `json:"storage_type"`
+	OldFilePath string `json:"old_file_path,omitempty"`
 }
 
 type Publisher struct {

@@ -1,10 +1,32 @@
 import os
 
 import psycopg2
+from psycopg2 import pool
+
+_pool = None
 
 
-def _connect():
-    return psycopg2.connect(host=os.environ.get("PGHOST", "/tmp"), dbname="engram")
+def _get_pool():
+    global _pool
+    if _pool is None or _pool.closed:
+        _pool = pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=4,
+            host=os.environ.get("PGHOST", "/tmp"),
+            dbname="engram",
+        )
+    return _pool
+
+
+def _get_conn():
+    return _get_pool().getconn()
+
+
+def _put_conn(conn):
+    try:
+        _get_pool().putconn(conn)
+    except Exception:
+        pass
 
 
 def insert_file(
@@ -17,14 +39,14 @@ def insert_file(
     storage_type: str,
 ) -> str | None:
     """Insert a new file record. Returns file_id, or None if duplicate."""
-    with _connect() as conn:
+    conn = _get_conn()
+    try:
         with conn.cursor() as cur:
-            # Check for duplicate
             cur.execute("SELECT id FROM files WHERE hash = %s", (hash_value,))
             if cur.fetchone():
+                conn.rollback()
                 return None
 
-            # Upsert device
             cur.execute(
                 """INSERT INTO devices (name) VALUES (%s)
                    ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
@@ -33,7 +55,6 @@ def insert_file(
             )
             device_id = cur.fetchone()[0]
 
-            # Insert file
             cur.execute(
                 """INSERT INTO files (filename, size, hash, file_path, device_id, status, storage_type, mtime)
                    VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
@@ -44,16 +65,63 @@ def insert_file(
 
         conn.commit()
         return file_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _put_conn(conn)
 
 
 def update_file_status(file_id: str, status: str):
-    with _connect() as conn:
+    conn = _get_conn()
+    try:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE files SET status = %s, updated_at = now() WHERE id = %s",
                 (status, file_id),
             )
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _put_conn(conn)
+
+
+def delete_file_by_path(file_path: str):
+    """Delete a file record by its file_path."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM files WHERE file_path = %s",
+                (file_path,),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _put_conn(conn)
+
+
+def rename_file(old_file_path: str, new_file_path: str, new_filename: str):
+    """Update file_path and filename for a renamed file."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE files
+                   SET file_path = %s, filename = %s, updated_at = now()
+                   WHERE file_path = %s""",
+                (new_file_path, new_filename, old_file_path),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _put_conn(conn)
 
 
 def update_file_metadata(
@@ -63,7 +131,8 @@ def update_file_metadata(
     extracted_text: str | None,
     tags: list[str],
 ):
-    with _connect() as conn:
+    conn = _get_conn()
+    try:
         with conn.cursor() as cur:
             cur.execute(
                 """UPDATE files
@@ -86,3 +155,8 @@ def update_file_metadata(
                 )
 
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _put_conn(conn)

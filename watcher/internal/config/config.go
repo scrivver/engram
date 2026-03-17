@@ -6,10 +6,21 @@ import (
 	"strings"
 )
 
+var defaultIgnore = []string{
+	".git",
+	".DS_Store",
+	"node_modules",
+	"__pycache__",
+	".venv",
+	".data",
+	"tmp",
+}
+
 type Config struct {
-	WatchDirs    []string
-	DeviceName   string
-	RabbitMQPort string
+	WatchDirs      []string
+	IgnorePatterns []string
+	DeviceName     string
+	RabbitMQPort   string
 }
 
 func Load() (*Config, error) {
@@ -27,10 +38,16 @@ func Load() (*Config, error) {
 		deviceName = hostname
 	}
 
+	ignore := defaultIgnore
+	if extra := os.Getenv("WATCH_IGNORE"); extra != "" {
+		ignore = append(ignore, strings.Split(extra, ",")...)
+	}
+
 	return &Config{
-		WatchDirs:    strings.Split(dirs, ","),
-		DeviceName:   deviceName,
-		RabbitMQPort: envOr("RABBITMQ_AMQP_PORT", "5672"),
+		WatchDirs:      strings.Split(dirs, ","),
+		IgnorePatterns: ignore,
+		DeviceName:     deviceName,
+		RabbitMQPort:   envOr("RABBITMQ_AMQP_PORT", "5672"),
 	}, nil
 }
 
