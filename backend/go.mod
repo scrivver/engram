@@ -3,12 +3,12 @@ module github.com/chunhou/engram
 go 1.25.6
 
 require (
+	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.8.0
 )
 
 require (
-	github.com/coreos/go-oidc/v3 v3.18.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

@@ -8,12 +8,48 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/chunhou/engram/internal/auth"
 	"github.com/chunhou/engram/internal/model"
 )
+
+// File-type allowlist: maps a user-facing category to a SQL fragment that
+// filters `f.mime_type`. Keeping the map here (rather than prefix-matching on
+// whatever string the client sends) is deliberate — unknown categories are
+// rejected, and `other` gets explicit semantics instead of a fragile NOT LIKE
+// chain built client-side.
+var fileTypeFilter = map[string]string{
+	"image": "f.mime_type LIKE 'image/%'",
+	"video": "f.mime_type LIKE 'video/%'",
+	"audio": "f.mime_type LIKE 'audio/%'",
+	"pdf":   "f.mime_type = 'application/pdf'",
+	"other": "(f.mime_type IS NULL OR (" +
+		"f.mime_type NOT LIKE 'image/%' AND " +
+		"f.mime_type NOT LIKE 'video/%' AND " +
+		"f.mime_type NOT LIKE 'audio/%' AND " +
+		"f.mime_type <> 'application/pdf'))",
+}
+
+// Sort allowlist: user-facing key → ORDER BY clause.
+var sortOrder = map[string]string{
+	"created_desc": "f.created_at DESC",
+	"mtime_desc":   "f.mtime DESC",
+	"size_desc":    "f.size DESC",
+	"size_asc":     "f.size ASC",
+}
+
+// parseDate accepts RFC 3339 or a bare YYYY-MM-DD.
+func parseDate(s string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
 
 func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	username := auth.UsernameFromContext(r.Context())
@@ -26,6 +62,26 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	device := q.Get("device")
 	search := q.Get("q")
 	tags := q["tag"]
+	fileType := q.Get("type")
+	fromStr := q.Get("from")
+	toStr := q.Get("to")
+	sortKey := q.Get("sort")
+	if sortKey == "" {
+		sortKey = "created_desc"
+	}
+
+	if fileType != "" {
+		if _, ok := fileTypeFilter[fileType]; !ok {
+			http.Error(w, "invalid type", http.StatusBadRequest)
+			return
+		}
+	}
+	orderBy, ok := sortOrder[sortKey]
+	if !ok {
+		http.Error(w, "invalid sort", http.StatusBadRequest)
+		return
+	}
+
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -58,8 +114,37 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if search != "" {
-		conditions = append(conditions, "f.filename ILIKE $"+strconv.Itoa(argIdx))
-		args = append(args, "%"+search+"%")
+		// Full-text match against the generated tsv column (see migration 003).
+		// websearch_to_tsquery supports Google-style syntax: quoted phrases,
+		// `-term` exclusions, implicit AND across terms.
+		conditions = append(conditions,
+			"f.tsv @@ websearch_to_tsquery('simple', $"+strconv.Itoa(argIdx)+")")
+		args = append(args, search)
+		argIdx++
+	}
+
+	if fileType != "" {
+		conditions = append(conditions, fileTypeFilter[fileType])
+	}
+
+	if fromStr != "" {
+		t, ok := parseDate(fromStr)
+		if !ok {
+			http.Error(w, "invalid 'from' date", http.StatusBadRequest)
+			return
+		}
+		conditions = append(conditions, "f.mtime >= $"+strconv.Itoa(argIdx))
+		args = append(args, t)
+		argIdx++
+	}
+	if toStr != "" {
+		t, ok := parseDate(toStr)
+		if !ok {
+			http.Error(w, "invalid 'to' date", http.StatusBadRequest)
+			return
+		}
+		conditions = append(conditions, "f.mtime <= $"+strconv.Itoa(argIdx))
+		args = append(args, t)
 		argIdx++
 	}
 
@@ -75,7 +160,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query += " WHERE " + strings.Join(conditions, " AND ")
-	query += " ORDER BY f.created_at DESC"
+	query += " ORDER BY " + orderBy
 	query += " LIMIT $" + strconv.Itoa(argIdx)
 	args = append(args, limit)
 	argIdx++
