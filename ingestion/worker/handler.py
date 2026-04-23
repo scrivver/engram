@@ -1,8 +1,9 @@
 import json
 import logging
 import traceback
+from urllib.parse import unquote_plus
 
-from . import db, pipeline
+from . import db, pipeline, storage
 
 log = logging.getLogger("engram-worker")
 
@@ -37,7 +38,9 @@ def _parse_message(body: bytes) -> dict:
         s3_info = record.get("s3", {})
         bucket = s3_info.get("bucket", {}).get("name", "")
         obj = s3_info.get("object", {})
-        key = obj.get("key", msg.get("Key", ""))
+        raw_key = obj.get("key", msg.get("Key", ""))
+        # S3 notifications URL-encode the key (e.g. spaces as '+', '/' as '%2F').
+        key = unquote_plus(raw_key)
         size = obj.get("size", 0)
 
         filename = key.rsplit("/", 1)[-1] if "/" in key else key
@@ -91,6 +94,11 @@ def on_message(channel, method, properties, body):
             parsed["device_name"],
         )
 
+        # Fetch object metadata to derive ownership (stamped as x-amz-meta-owner
+        # on upload). boto3 lowercases user-metadata keys.
+        meta = storage.head_metadata(parsed["file_path"], parsed["storage_type"])
+        owner = meta.get("owner") or None
+
         file_id = db.insert_file(
             file_path=parsed["file_path"],
             filename=parsed["filename"],
@@ -99,6 +107,7 @@ def on_message(channel, method, properties, body):
             mtime=parsed["mtime"],
             device_name=parsed["device_name"],
             storage_type=parsed["storage_type"],
+            owner=owner,
         )
 
         if file_id is None:

@@ -2,15 +2,22 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/chunhou/engram/internal/auth"
 	"github.com/chunhou/engram/internal/model"
 )
 
 func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	username := auth.UsernameFromContext(r.Context())
+
 	q := r.URL.Query()
 	status := q.Get("status")
 	if status == "" {
@@ -40,6 +47,10 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	args = append(args, status)
 	argIdx++
 
+	conditions = append(conditions, "f.owner = $"+strconv.Itoa(argIdx))
+	args = append(args, username)
+	argIdx++
+
 	if device != "" {
 		conditions = append(conditions, "d.name = $"+strconv.Itoa(argIdx))
 		args = append(args, device)
@@ -63,10 +74,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		conditions = append(conditions, "t.name IN ("+strings.Join(placeholders, ",")+")")
 	}
 
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
-	}
-
+	query += " WHERE " + strings.Join(conditions, " AND ")
 	query += " ORDER BY f.created_at DESC"
 	query += " LIMIT $" + strconv.Itoa(argIdx)
 	args = append(args, limit)
@@ -94,6 +102,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		f.DownloadURL = s.renderDownloadURL(f.StorageType, f.FilePath)
 		files = append(files, f)
 	}
 
@@ -102,6 +111,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
+	username := auth.UsernameFromContext(r.Context())
 	id := r.PathValue("id")
 
 	var f model.File
@@ -110,18 +120,23 @@ func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 		        f.status, f.storage_type, f.mime_type, f.page_count,
 		        f.extracted_text, f.mtime, f.created_at, f.updated_at
 		 FROM files f JOIN devices d ON f.device_id = d.id
-		 WHERE f.id = $1`, id,
+		 WHERE f.id = $1 AND f.owner = $2`, id, username,
 	).Scan(
 		&f.ID, &f.Filename, &f.Size, &f.Hash, &f.FilePath, &f.DeviceID, &f.DeviceName,
 		&f.Status, &f.StorageType, &f.MimeType, &f.PageCount,
 		&f.ExtractedText, &f.Mtime, &f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
-		http.Error(w, "file not found", http.StatusNotFound)
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "file not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("get file: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	f.DownloadURL = s.renderDownloadURL(f.StorageType, f.FilePath)
 
-	// Fetch tags
 	tagRows, err := s.db.Query(r.Context(),
 		`SELECT t.name FROM tags t JOIN file_tags ft ON t.id = ft.tag_id WHERE ft.file_id = $1`, id)
 	if err == nil {
@@ -139,10 +154,16 @@ func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
+	username := auth.UsernameFromContext(r.Context())
+
 	rows, err := s.db.Query(r.Context(),
-		`SELECT t.id, t.name, COUNT(ft.file_id) as file_count
-		 FROM tags t LEFT JOIN file_tags ft ON t.id = ft.tag_id
-		 GROUP BY t.id, t.name ORDER BY file_count DESC`)
+		`SELECT t.id, t.name, COUNT(DISTINCT ft.file_id) as file_count
+		 FROM tags t
+		 JOIN file_tags ft ON t.id = ft.tag_id
+		 JOIN files f ON f.id = ft.file_id
+		 WHERE f.owner = $1
+		 GROUP BY t.id, t.name
+		 ORDER BY file_count DESC`, username)
 	if err != nil {
 		log.Printf("list tags: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -163,8 +184,14 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
+	username := auth.UsernameFromContext(r.Context())
+
 	rows, err := s.db.Query(r.Context(),
-		`SELECT id, name, created_at FROM devices ORDER BY name`)
+		`SELECT DISTINCT d.id, d.name, d.created_at
+		 FROM devices d
+		 JOIN files f ON f.device_id = d.id
+		 WHERE f.owner = $1
+		 ORDER BY d.name`, username)
 	if err != nil {
 		log.Printf("list devices: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -182,4 +209,13 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(devices)
+}
+
+// renderDownloadURL returns a URL for downloading a file, derived from
+// PresignURLTemplate. Only populated for s3-backed files when a template is set.
+func (s *Server) renderDownloadURL(storageType, filePath string) string {
+	if storageType != "s3" || s.presignURLTemplate == "" {
+		return ""
+	}
+	return strings.ReplaceAll(s.presignURLTemplate, "{file_path}", url.QueryEscape(filePath))
 }

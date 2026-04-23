@@ -25,6 +25,7 @@ type File struct {
 	Tags          []string  `json:"tags,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	DownloadURL   string    `json:"download_url,omitempty"`
 }
 
 type Tag struct {

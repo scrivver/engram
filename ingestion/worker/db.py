@@ -37,12 +37,17 @@ def insert_file(
     mtime: str,
     device_name: str,
     storage_type: str,
+    owner: str | None = None,
 ) -> str | None:
     """Insert a new file record. Returns file_id, or None if duplicate."""
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM files WHERE hash = %s", (hash_value,))
+            # Dedup is scoped per (hash, owner); NULL owners treated as distinct.
+            cur.execute(
+                "SELECT id FROM files WHERE hash = %s AND owner IS NOT DISTINCT FROM %s",
+                (hash_value, owner),
+            )
             if cur.fetchone():
                 conn.rollback()
                 return None
@@ -56,10 +61,10 @@ def insert_file(
             device_id = cur.fetchone()[0]
 
             cur.execute(
-                """INSERT INTO files (filename, size, hash, file_path, device_id, status, storage_type, mtime)
-                   VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
+                """INSERT INTO files (filename, size, hash, file_path, device_id, status, storage_type, mtime, owner)
+                   VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s, %s)
                    RETURNING id""",
-                (filename, size, hash_value, file_path, device_id, storage_type, mtime),
+                (filename, size, hash_value, file_path, device_id, storage_type, mtime, owner),
             )
             file_id = str(cur.fetchone()[0])
 
