@@ -26,6 +26,11 @@ def process(file_id: str, file_path: str, filename: str, storage_type: str, mtim
         elif mime_type.startswith("image/"):
             result = extractors.extract_image(tmp_path)
             gps = result.get("gps")
+            # OCR the image — any recognized text feeds into FTS alongside
+            # filename. Silently yields "" on failure / disabled config.
+            ocr_text = extractors.ocr_image(tmp_path)
+            if ocr_text:
+                extracted_text = ocr_text[:100_000]
         elif mime_type.startswith("text/"):
             result = extractors.extract_text(tmp_path)
             extracted_text = result["text"]
