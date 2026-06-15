@@ -8,19 +8,19 @@ An engram is a unit of cognitive information imprinted in the mind palace. It is
 
 > You never forget anything, you just have to find the right engram.
 
-Engram is the server-side metadata extraction layer for the mind palace archival system. Files arrive via storage events (filesystem changes or S3 bucket notifications), metadata is extracted in the background, and a read-only API provides search and query access to the indexed metadata.
+Engram is the server-side metadata extraction layer for the mind palace archival system. Files arrive via canonical storage events, metadata is extracted in the background, and a read-only API provides search and query access to the indexed metadata.
 
 ## How It Works
 
 ```
 Path 1 (filesystem):  Go watcher (fsnotify) → RabbitMQ → Python worker → PostgreSQL
-Path 2 (S3):          MinIO/S3 bucket notification → RabbitMQ → Python worker → PostgreSQL
+Path 2 (S3):          Storage backend → RabbitMQ → Python worker → PostgreSQL
 
 API:                  PostgreSQL ← read-only queries ← clients
 ```
 
 1. A file appears in storage (written to a watched directory, or uploaded to an S3 bucket)
-2. An event is published to RabbitMQ (by the Go watcher for filesystem, or by MinIO natively for S3)
+2. An event is published to RabbitMQ by the Go watcher or the backend that performed the S3 operation
 3. The Python ingestion worker picks up the event, reads the file, extracts metadata (MIME type, text content, page count), generates tags, and writes everything to PostgreSQL
 4. The API serves read-only queries against the indexed metadata — search by filename, filter by tags or device
 
@@ -30,7 +30,7 @@ API:                  PostgreSQL ← read-only queries ← clients
 - **Python** — Ingestion worker for metadata extraction
 - **PostgreSQL** — Metadata database (unix socket, no TCP)
 - **RabbitMQ** — Event queue between storage events and worker
-- **MinIO** — S3-compatible object storage (dev infrastructure, with AMQP bucket notifications)
+- **MinIO** — S3-compatible object storage for development
 - **Nix flakes** — Development environment and service orchestration
 
 ## Prerequisites

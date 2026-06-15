@@ -16,8 +16,8 @@ No files are uploaded through or downloaded from the API. Files live in their or
          │                               │
          ▼                               ▼
 ┌─────────────────────┐     ┌──────────────────────────┐
-│  Go Watcher          │     │  S3 Bucket Notification   │
-│  (fsnotify)          │     │  (native MinIO/S3 config) │
+│  Go Watcher          │     │  Storage-owning Backend   │
+│  (fsnotify)          │     │  (for example Reliquary)  │
 └────────┬────────────┘     └────────────┬─────────────┘
          │                               │
          └───────────┐   ┌──────────────┘
@@ -86,11 +86,14 @@ Watches directories recursively using `fsnotify`. Automatically picks up new sub
 
 This is deployed independently from the backend — it runs wherever the files are.
 
-### S3 Bucket Notifications
+### S3-Backed Events
 
-For S3-compatible storage, MinIO (or AWS S3) is configured to send bucket notification events directly to RabbitMQ. No custom code is needed — this is handled by MinIO's native AMQP notification support.
+For S3-compatible storage, the backend that performs the object mutation publishes
+the same canonical file event after the operation succeeds. Engram does not require
+the S3 provider to support native notifications.
 
-The Python worker handles both filesystem watcher events and S3 notification events, normalizing them into a common format before processing.
+The Python worker temporarily handles both canonical events and legacy MinIO/S3
+notifications during migration. New producers must publish the canonical format.
 
 ### Python Ingestion Worker (`ingestion/`)
 
@@ -120,19 +123,22 @@ Stores all metadata. Connected via unix socket in development (no TCP).
 - `tags` — distinct tag names
 - `file_tags` — many-to-many relationship between files and tags
 
-Content-based deduplication is enforced by a unique index on the file hash.
+Storage identity is enforced by `(storage_type, file_path)`. Hash and owner remain
+indexed content metadata and may be used by higher-level deduplication workflows.
 
 **Status lifecycle:** `pending` → `processing` → `ready` | `failed`
 
 ### RabbitMQ
 
-Single durable queue `engram.ingest` used by all event producers (watcher, S3 notifications) and consumed by the Python worker. Messages are persistent.
+Single durable queue `engram.ingest` used by all event producers and consumed by the
+Python worker. Messages are persistent and delivered at least once, so processing is
+idempotent by `(storage_type, file_path)`.
 
 ## Message Formats
 
-### Filesystem Watcher Event
+### Canonical File Event
 
-Published by the Go watcher when a file is created or modified:
+Published by the Go watcher or a storage-owning backend:
 
 ```json
 {
@@ -147,9 +153,9 @@ Published by the Go watcher when a file is created or modified:
 }
 ```
 
-### S3 Bucket Notification
+### Legacy S3 Bucket Notification
 
-Published by MinIO/S3 natively when an object is created:
+Accepted temporarily from existing MinIO/S3 integrations:
 
 ```json
 {
@@ -165,7 +171,9 @@ Published by MinIO/S3 natively when an object is created:
 }
 ```
 
-The Python worker detects the format by checking for `"event"` (watcher) vs `"EventName"`/`"Records"` (S3) keys.
+The Python worker detects the legacy format by checking for `"EventName"` or
+`"Records"`. This compatibility path will be removed after all producers publish
+canonical events. The contract fixtures live in `contracts/file-events/`.
 
 ## Two Ingestion Paths
 
@@ -180,7 +188,7 @@ The watcher and worker must run on the same machine (or have access to the same 
 ### Path 2: S3-Compatible Storage
 
 ```
-File uploaded to S3 bucket → MinIO sends notification → Python worker downloads file via boto3 → metadata stored → temp file cleaned up
+Backend uploads file to S3 → backend publishes canonical event → Python worker downloads file via boto3 → metadata stored → temp file cleaned up
 ```
 
 The worker needs S3 credentials (`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`) to download files.
@@ -197,7 +205,8 @@ file_tags (file_id, tag_id)
 ```
 
 Key indexes:
-- `idx_files_hash` (unique) — deduplication
+- `idx_files_storage_path` (unique) — event identity and idempotency
+- `idx_files_hash_owner` — content lookup by hash and owner
 - `idx_files_device` — query by device
 - `idx_files_status` — filter by processing status
 - `idx_files_filename` — filename search

@@ -1,6 +1,5 @@
 import os
 
-import psycopg2
 from psycopg2 import pool
 
 _pool = None
@@ -29,7 +28,7 @@ def _put_conn(conn):
         pass
 
 
-def insert_file(
+def upsert_file(
     file_path: str,
     filename: str,
     size: int,
@@ -38,20 +37,11 @@ def insert_file(
     device_name: str,
     storage_type: str,
     owner: str | None = None,
-) -> str | None:
-    """Insert a new file record. Returns file_id, or None if duplicate."""
+) -> str:
+    """Create or reset a file record identified by storage type and path."""
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            # Dedup is scoped per (hash, owner); NULL owners treated as distinct.
-            cur.execute(
-                "SELECT id FROM files WHERE hash = %s AND owner IS NOT DISTINCT FROM %s",
-                (hash_value, owner),
-            )
-            if cur.fetchone():
-                conn.rollback()
-                return None
-
             cur.execute(
                 """INSERT INTO devices (name) VALUES (%s)
                    ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
@@ -63,10 +53,32 @@ def insert_file(
             cur.execute(
                 """INSERT INTO files (filename, size, hash, file_path, device_id, status, storage_type, mtime, owner)
                    VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s, %s)
+                   ON CONFLICT (storage_type, file_path) DO UPDATE SET
+                       filename = EXCLUDED.filename,
+                       size = EXCLUDED.size,
+                       hash = EXCLUDED.hash,
+                       device_id = EXCLUDED.device_id,
+                       status = 'pending',
+                       mtime = EXCLUDED.mtime,
+                       owner = EXCLUDED.owner,
+                       mime_type = NULL,
+                       page_count = NULL,
+                       extracted_text = NULL,
+                       updated_at = now()
                    RETURNING id""",
-                (filename, size, hash_value, file_path, device_id, storage_type, mtime, owner),
+                (
+                    filename,
+                    size,
+                    hash_value,
+                    file_path,
+                    device_id,
+                    storage_type,
+                    mtime,
+                    owner,
+                ),
             )
             file_id = str(cur.fetchone()[0])
+            cur.execute("DELETE FROM file_tags WHERE file_id = %s", (file_id,))
 
         conn.commit()
         return file_id
@@ -93,14 +105,14 @@ def update_file_status(file_id: str, status: str):
         _put_conn(conn)
 
 
-def delete_file_by_path(file_path: str):
-    """Delete a file record by its file_path."""
+def delete_file(storage_type: str, file_path: str):
+    """Delete a file record by its storage identity."""
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM files WHERE file_path = %s",
-                (file_path,),
+                "DELETE FROM files WHERE storage_type = %s AND file_path = %s",
+                (storage_type, file_path),
             )
         conn.commit()
     except Exception:
@@ -110,16 +122,21 @@ def delete_file_by_path(file_path: str):
         _put_conn(conn)
 
 
-def rename_file(old_file_path: str, new_file_path: str, new_filename: str):
-    """Update file_path and filename for a renamed file."""
+def rename_file(
+    storage_type: str,
+    old_file_path: str,
+    new_file_path: str,
+    new_filename: str,
+):
+    """Update the path and filename for a stored file."""
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """UPDATE files
                    SET file_path = %s, filename = %s, updated_at = now()
-                   WHERE file_path = %s""",
-                (new_file_path, new_filename, old_file_path),
+                   WHERE storage_type = %s AND file_path = %s""",
+                (new_file_path, new_filename, storage_type, old_file_path),
             )
         conn.commit()
     except Exception:

@@ -1,0 +1,11 @@
+{
+  "event": "rename",
+  "file_path": "/srv/files/report-final.pdf",
+  "filename": "report-final.pdf",
+  "size": 204800,
+  "hash": "sha256:abcdef123456",
+  "mtime": "2026-06-15T12:05:00Z",
+  "device_name": "server1",
+  "storage_type": "fs",
+  "old_file_path": "/srv/files/report.pdf"
+}

@@ -7,6 +7,36 @@ from . import db, pipeline, storage
 
 log = logging.getLogger("engram-worker")
 
+EVENT_TYPES = {"create", "delete", "rename"}
+STORAGE_TYPES = {"fs", "s3"}
+
+
+def _validate_message(msg: dict) -> dict:
+    event = msg.get("event")
+    if event not in EVENT_TYPES:
+        raise ValueError(f"invalid event: {event!r}")
+
+    for field in ("file_path", "filename", "device_name", "storage_type"):
+        if not msg.get(field):
+            raise ValueError(f"{field} is required")
+
+    if msg["storage_type"] not in STORAGE_TYPES:
+        raise ValueError(f"invalid storage_type: {msg['storage_type']!r}")
+
+    if event in {"create", "rename"}:
+        for field in ("hash", "mtime"):
+            if not msg.get(field):
+                raise ValueError(f"{field} is required for {event}")
+        if not str(msg["hash"]).startswith("sha256:"):
+            raise ValueError("hash must use the sha256:<hex> format")
+        if not isinstance(msg.get("size"), int) or msg["size"] < 0:
+            raise ValueError(f"size must be a non-negative integer for {event}")
+
+    if event == "rename" and not msg.get("old_file_path"):
+        raise ValueError("old_file_path is required for rename")
+
+    return msg
+
 
 def _parse_message(body: bytes) -> dict:
     """Parse message and normalize into common format.
@@ -19,17 +49,19 @@ def _parse_message(body: bytes) -> dict:
 
     # Filesystem watcher event
     if "event" in msg:
-        return {
-            "event": msg["event"],
-            "file_path": msg.get("file_path", ""),
-            "filename": msg.get("filename", ""),
-            "size": msg.get("size", 0),
-            "hash": msg.get("hash", ""),
-            "mtime": msg.get("mtime", ""),
-            "device_name": msg.get("device_name", ""),
-            "storage_type": msg.get("storage_type", "fs"),
-            "old_file_path": msg.get("old_file_path", ""),
-        }
+        return _validate_message(
+            {
+                "event": msg["event"],
+                "file_path": msg.get("file_path", ""),
+                "filename": msg.get("filename", ""),
+                "size": msg.get("size", 0),
+                "hash": msg.get("hash", ""),
+                "mtime": msg.get("mtime", ""),
+                "device_name": msg.get("device_name", ""),
+                "storage_type": msg.get("storage_type", "fs"),
+                "old_file_path": msg.get("old_file_path", ""),
+            }
+        )
 
     # S3 bucket notification (MinIO format)
     if "EventName" in msg or "Records" in msg:
@@ -75,14 +107,21 @@ def on_message(channel, method, properties, body):
         # Handle delete events
         if event == "delete":
             log.info("Delete event: %s", parsed["file_path"])
-            db.delete_file_by_path(parsed["file_path"])
+            db.delete_file(parsed["storage_type"], parsed["file_path"])
             channel.basic_ack(delivery_tag=method.delivery_tag)
             return
 
         # Handle rename events
         if event == "rename":
-            log.info("Rename event: %s -> %s", parsed["old_file_path"], parsed["file_path"])
-            db.rename_file(parsed["old_file_path"], parsed["file_path"], parsed["filename"])
+            log.info(
+                "Rename event: %s -> %s", parsed["old_file_path"], parsed["file_path"]
+            )
+            db.rename_file(
+                parsed["storage_type"],
+                parsed["old_file_path"],
+                parsed["file_path"],
+                parsed["filename"],
+            )
             channel.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -99,7 +138,7 @@ def on_message(channel, method, properties, body):
         meta = storage.head_metadata(parsed["file_path"], parsed["storage_type"])
         owner = meta.get("owner") or None
 
-        file_id = db.insert_file(
+        file_id = db.upsert_file(
             file_path=parsed["file_path"],
             filename=parsed["filename"],
             size=parsed["size"],
@@ -109,11 +148,6 @@ def on_message(channel, method, properties, body):
             storage_type=parsed["storage_type"],
             owner=owner,
         )
-
-        if file_id is None:
-            log.info("Duplicate file (hash=%s), skipping", parsed["hash"])
-            channel.basic_ack(delivery_tag=method.delivery_tag)
-            return
 
         db.update_file_status(file_id, "processing")
 

@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Engram is the server-side metadata extraction layer for the Mind Palace archival system. Files arrive via storage events (filesystem changes or S3 bucket notifications), metadata is extracted by a background worker, and a read-only API provides search and query access to the indexed metadata.
+Engram is the server-side metadata extraction layer for the Mind Palace archival system. Files arrive via canonical storage events, metadata is extracted by a background worker, and a read-only API provides search and query access to the indexed metadata.
 
 ## Architecture
 
 ```
 Path 1 (fs):   Go watcher (fsnotify) → RabbitMQ → Python worker → PostgreSQL
-Path 2 (S3):   MinIO/S3 bucket notification → RabbitMQ → Python worker → PostgreSQL
+Path 2 (S3):   Storage backend → RabbitMQ → Python worker → PostgreSQL
 
 API:            PostgreSQL ← read-only queries ← clients
 ```
@@ -74,7 +74,7 @@ bin/test-ingest
 
 - **PostgreSQL** uses unix socket only (no TCP). Socket at `.data/postgres/`. `PGHOST` points there.
 - **RabbitMQ** uses dynamically assigned ports written to `.data/rabbitmq/{amqp_port,mgmt_port}`. Queue `engram.ingest` and its binding to `amq.direct` are declared via `load_definitions` in the RabbitMQ config (see `infra/rabbitmq.nix`).
-- **MinIO** provides S3-compatible storage in dev with AMQP bucket notifications to RabbitMQ. Ports written to `.data/minio/{api_port,console_port}`.
+- **MinIO** provides S3-compatible storage in development. Ports are written to `.data/minio/{api_port,console_port}`.
 - All runtime data lives in `.data/` (gitignored). Delete it to reset state: `rm -rf .data/`
 
 ## Key Environment Variables
@@ -118,6 +118,8 @@ S3 env vars (`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_
 - Nix infra processes are defined in `infra/*.nix` and composed into `process-compose.yaml` via `flake.nix`.
 - PostgreSQL connections always use unix sockets for local dev. Do not configure TCP listeners.
 - RabbitMQ queue `engram.ingest` is declared declaratively via `load_definitions` in `infra/rabbitmq.nix`. Do not rely on application code to create queues.
-- The Python worker handles two message formats: filesystem watcher events and S3 bucket notifications.
+- New producers publish the canonical event contract in `contracts/file-events/`.
+- The Python worker temporarily accepts legacy S3 bucket notifications during migration.
+- File event identity is `(storage_type, file_path)`; delivery is at least once.
 - The Python worker auto-reconnects to RabbitMQ with exponential backoff on connection loss.
 - The watcher publishes `create`, `delete`, and `rename` events. It ignores dotfiles, `.git`, `node_modules`, `__pycache__`, and other common patterns by default.

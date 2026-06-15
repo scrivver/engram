@@ -1,0 +1,10 @@
+{
+  "event": "delete",
+  "file_path": "files/alice/2026/06/report.pdf",
+  "filename": "report.pdf",
+  "size": 0,
+  "hash": "",
+  "mtime": "",
+  "device_name": "reliquary",
+  "storage_type": "s3"
+}
