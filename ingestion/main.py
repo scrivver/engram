@@ -19,13 +19,15 @@ _shutdown = False
 def main():
     global _shutdown
 
+    amqp_host = os.environ.get("RABBITMQ_HOST", "127.0.0.1")
     amqp_port = os.environ.get("RABBITMQ_AMQP_PORT", "5672")
     pg_host = os.environ.get("PGHOST", "/tmp")
     storage_backend = os.environ.get("STORAGE_BACKEND", "fs")
 
     log.info(
-        "Starting engram ingestion worker (PGHOST=%s, RABBITMQ_AMQP_PORT=%s, STORAGE=%s)",
+        "Starting engram ingestion worker (PGHOST=%s, RABBITMQ_HOST=%s, RABBITMQ_AMQP_PORT=%s, STORAGE=%s)",
         pg_host,
+        amqp_host,
         amqp_port,
         storage_backend,
     )
@@ -39,7 +41,7 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
 
     params = pika.ConnectionParameters(
-        host="127.0.0.1",
+        host=amqp_host,
         port=int(amqp_port),
         heartbeat=60,
         blocked_connection_timeout=300,
@@ -68,12 +70,18 @@ def main():
             break
 
         except pika.exceptions.AMQPConnectionError as e:
-            log.warning("RabbitMQ connection failed: %s (retrying in %ds)", e, retry_delay)
+            log.warning(
+                "RabbitMQ connection failed: %s (retrying in %ds)", e, retry_delay
+            )
             time.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, MAX_RETRY_DELAY)
 
         except pika.exceptions.ConnectionClosedByBroker as e:
-            log.warning("RabbitMQ connection closed by broker: %s (retrying in %ds)", e, retry_delay)
+            log.warning(
+                "RabbitMQ connection closed by broker: %s (retrying in %ds)",
+                e,
+                retry_delay,
+            )
             time.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, MAX_RETRY_DELAY)
 

@@ -25,6 +25,14 @@
 	ingestionShell = import ./shells/ingestion.nix { inherit pkgs infraShell; };
 	in
 	{
+	packages = {
+	  backend = import ./nix/backend.nix { inherit pkgs; };
+	  api-container = import ./nix/api-container.nix { inherit pkgs; };
+	  ingestion = import ./nix/ingestion.nix { inherit pkgs; };
+	  ingestion-container = import ./nix/ingestion-container.nix { inherit pkgs; };
+	  default = self.packages.${system}.backend;
+	};
+
 	devShells = rec {
 	  infra     = infraShell;
 	  backend   = backendShell;

@@ -60,6 +60,25 @@ cd ingestion && uv run main.py       # Needs PGHOST + RABBITMQ_AMQP_PORT
 bin/test-ingest
 ```
 
+## Packaged Outputs
+
+Engram owns its deployment package and image outputs:
+
+- `.#backend`: Go read-only metadata API package.
+- `.#api-container`: `engram-api:latest`, running the API on port `8081` with
+  `engram-api-healthcheck` probing `/api/health`.
+- `.#ingestion`: packaged Python ingestion runtime.
+- `.#ingestion-container`: `engram-ingestion:latest`, running the ingestion
+  worker with CA certificates and extraction tools (`file`, `ffmpeg`,
+  `poppler-utils`, `tesseract`) included.
+
+Mind Palace root deployment builds these child outputs with
+`nix build path:$PROJECT_ROOT/engram#api-container` and
+`nix build path:$PROJECT_ROOT/engram#ingestion-container`, then tags the loaded
+images to the root Compose names. Do not duplicate Engram Go vendor hashes,
+Python dependency materialization, entrypoints, or healthcheck helpers in the
+Mind Palace root repo.
+
 ### Dev Shells
 
 | Shell | Command | Contents |

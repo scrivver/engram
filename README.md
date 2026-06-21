@@ -134,6 +134,41 @@ cd watcher && go build -o engram-watcher
 cd ingestion && uv sync
 ```
 
+### Packaged Image Outputs
+
+Engram owns the package and container outputs for its deployable runtime
+boundaries. Mind Palace root orchestration consumes these outputs and may tag
+the loaded images to platform names such as `mind-palace-engram-api:latest`.
+
+| Output | Image | Purpose |
+|--------|-------|---------|
+| `backend` | — | Go read-only metadata API package |
+| `api-container` | `engram-api:latest` | Go API image exposing port `8081` |
+| `ingestion` | — | Packaged Python ingestion runtime |
+| `ingestion-container` | `engram-ingestion:latest` | Python metadata ingestion worker image |
+
+Build the images from this repository:
+
+```bash
+nix build .#api-container --no-link --print-out-paths
+nix build .#ingestion-container --no-link --print-out-paths
+```
+
+The API image runs the Engram backend binary, exposes `8081/tcp`, and includes
+`engram-api-healthcheck`, which probes `http://127.0.0.1:8081/api/health`.
+The API accepts `PORT`, `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`,
+`AUTH_MODE`, `OIDC_ISSUER_URL`, `OIDC_USERNAME_CLAIM`, and
+`PRESIGN_URL_TEMPLATE` from the runtime environment.
+
+The ingestion image runs the packaged Python worker without installing
+dependencies during Compose startup. It includes CA certificates plus extraction
+tools used by the worker, including `file`, `ffmpeg`, `poppler-utils`, and
+`tesseract`. It accepts `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`,
+`RABBITMQ_HOST`, `RABBITMQ_AMQP_PORT`, `STORAGE_BACKEND`,
+`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`, and
+`STORAGE_S3_BUCKET` from the runtime environment. The ingestion image includes
+`engram-ingestion-healthcheck`, a PID liveness check for Compose.
+
 ### Adding Dependencies
 
 ```bash
@@ -180,6 +215,9 @@ The backend API is read-only — it queries metadata from PostgreSQL. No file up
 |----------|---------|-------------|
 | `PORT` | `8080` | API server port |
 | `PGHOST` | — | PostgreSQL unix socket directory |
+| `PGUSER` | `postgres` | PostgreSQL user |
+| `PGPASSWORD` | — | PostgreSQL password, required for TCP deployments |
+| `PGDATABASE` | `engram` | PostgreSQL database name |
 
 ### Filesystem Watcher
 
@@ -197,6 +235,10 @@ Default ignore patterns: `.git`, `.DS_Store`, `node_modules`, `__pycache__`, `.v
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PGHOST` | — | PostgreSQL unix socket directory |
+| `PGUSER` | `postgres` | PostgreSQL user |
+| `PGPASSWORD` | — | PostgreSQL password, required for TCP deployments |
+| `PGDATABASE` | `engram` | PostgreSQL database name |
+| `RABBITMQ_HOST` | `127.0.0.1` | RabbitMQ host |
 | `RABBITMQ_AMQP_PORT` | `5672` | RabbitMQ AMQP port |
 | `STORAGE_S3_ENDPOINT` | — | S3 endpoint (only for S3 storage type) |
 | `STORAGE_S3_ACCESS_KEY` | — | S3 access key |
