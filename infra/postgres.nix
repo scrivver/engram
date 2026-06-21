@@ -1,9 +1,10 @@
 { pkgs, databases ? [ "engram" ] }:
 let
+  psqlCmd = "psql -h \"$DATA_DIR/postgres\" -U postgres";
   createDbCommands = builtins.concatStringsSep "\n" (map (db: ''
-    if ! psql -h "$DATA_DIR/postgres" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -q 1; then
+    if ! ${psqlCmd} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -q 1; then
       echo "Creating database '${db}'..."
-      createdb -h "$DATA_DIR/postgres" "${db}"
+      createdb -h "$DATA_DIR/postgres" -U postgres "${db}"
     else
       echo "Database '${db}' already exists."
     fi
@@ -44,6 +45,11 @@ in
     postgres-init = {
       command = pkgs.writeShellScript "init-databases" ''
         set -euo pipefail
+
+        # Ensure postgres superuser role exists (initdb creates a role matching the OS user, not postgres)
+        psql -h "$DATA_DIR/postgres" -d postgres -tc "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'postgres'" | grep -q 1 || \
+          psql -h "$DATA_DIR/postgres" -d postgres -c "CREATE ROLE postgres WITH SUPERUSER LOGIN;"
+
         ${createDbCommands}
         echo "All databases ensured."
       '';
