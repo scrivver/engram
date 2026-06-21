@@ -157,8 +157,8 @@ nix build .#ingestion-container --no-link --print-out-paths
 The API image runs the Engram backend binary, exposes `8081/tcp`, and includes
 `engram-api-healthcheck`, which probes `http://127.0.0.1:8081/api/health`.
 The API accepts `PORT`, `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`,
-`AUTH_MODE`, `OIDC_ISSUER_URL`, `OIDC_USERNAME_CLAIM`, and
-`PRESIGN_URL_TEMPLATE` from the runtime environment.
+`AUTH_MODE`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_USERNAME_CLAIM`,
+`OIDC_REDIRECT_URI`, and `PRESIGN_URL_TEMPLATE` from the runtime environment.
 
 The ingestion image runs the packaged Python worker without installing
 dependencies during Compose startup. It includes CA certificates plus extraction
@@ -218,6 +218,25 @@ The backend API is read-only — it queries metadata from PostgreSQL. No file up
 | `PGUSER` | `postgres` | PostgreSQL user |
 | `PGPASSWORD` | — | PostgreSQL password, required for TCP deployments |
 | `PGDATABASE` | `engram` | PostgreSQL database name |
+| `AUTH_MODE` | — | `oidc` to require bearer tokens, `none` or empty for unauthenticated local access |
+| `OIDC_ISSUER_URL` | — | OIDC issuer used for token validation and browser discovery helpers |
+| `OIDC_CLIENT_ID` | `mind-palace` | Public OIDC client id advertised to clients |
+| `OIDC_USERNAME_CLAIM` | `preferred_username` | Userinfo claim used as the owner identity |
+| `OIDC_REDIRECT_URI` | `com.mindpalace.app://callback` | Redirect URI advertised by `/api/auth/config` |
+
+### Auth Helper API
+
+When browser clients need to sign in, Engram exposes the same public helper
+shape used by Reliquary:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/auth/config` | Returns enabled auth modes and OIDC client metadata without secrets |
+| `GET` | `/api/auth/oidc/discovery` | Proxies the configured provider discovery document |
+| `POST` | `/api/auth/oidc/token` | Proxies authorization-code and refresh-token exchanges to the provider |
+
+The OIDC discovery and token routes return a clear non-2xx response when
+`AUTH_MODE` is not `oidc` or the issuer is missing.
 
 ### Filesystem Watcher
 

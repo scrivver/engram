@@ -42,7 +42,11 @@ func main() {
 		log.Fatalf("unknown AUTH_MODE: %q", cfg.AuthMode)
 	}
 
-	srv := api.NewServer(pool, api.WithPresignURLTemplate(cfg.PresignURLTemplate))
+	srv := api.NewServer(
+		pool,
+		api.WithConfig(cfg),
+		api.WithPresignURLTemplate(cfg.PresignURLTemplate),
+	)
 	addr := ":" + cfg.Port
 	log.Printf("Engram backend listening on %s (auth=%s)", addr, cfg.AuthMode)
 	if err := http.ListenAndServe(addr, srv.Routes(authMW)); err != nil {

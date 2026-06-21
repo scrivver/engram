@@ -3,18 +3,24 @@ package api
 import (
 	"net/http"
 
+	"github.com/chunhou/engram/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Server struct {
 	db                 *pgxpool.Pool
 	presignURLTemplate string
+	cfg                *config.Config
 }
 
 type Option func(*Server)
 
 func WithPresignURLTemplate(tmpl string) Option {
 	return func(s *Server) { s.presignURLTemplate = tmpl }
+}
+
+func WithConfig(cfg *config.Config) Option {
+	return func(s *Server) { s.cfg = cfg }
 }
 
 func NewServer(db *pgxpool.Pool, opts ...Option) *Server {
@@ -32,6 +38,9 @@ func (s *Server) Routes(authMW Middleware) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/auth/config", s.handleAuthConfig)
+	mux.HandleFunc("GET /api/auth/oidc/discovery", s.handleOIDCDiscovery)
+	mux.HandleFunc("POST /api/auth/oidc/token", s.handleOIDCToken)
 
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /api/files", s.handleListFiles)

@@ -15,7 +15,9 @@ type Config struct {
 
 	AuthMode          string
 	OIDCIssuerURL     string
+	OIDCClientID      string
 	OIDCUsernameClaim string
+	OIDCRedirectURI   string
 
 	// PresignURLTemplate is used to render download_url for s3-backed files.
 	// Must include "{file_path}" which is replaced with the url-encoded key.
@@ -31,7 +33,9 @@ func Load() (*Config, error) {
 		PGDatabase:         envOr("PGDATABASE", "engram"),
 		AuthMode:           envOr("AUTH_MODE", ""),
 		OIDCIssuerURL:      os.Getenv("OIDC_ISSUER_URL"),
+		OIDCClientID:       envOr("OIDC_CLIENT_ID", "mind-palace"),
 		OIDCUsernameClaim:  envOr("OIDC_USERNAME_CLAIM", "preferred_username"),
+		OIDCRedirectURI:    envOr("OIDC_REDIRECT_URI", "com.mindpalace.app://callback"),
 		PresignURLTemplate: os.Getenv("PRESIGN_URL_TEMPLATE"),
 	}
 
