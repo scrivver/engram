@@ -13,13 +13,6 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	owner := auth.UsernameFromContext(r.Context())
 
 	resp := model.StatsResponse{
-		Status:        "healthy",
-		EfficiencyPct: 100,
-		ActiveProcess: "Recursive Indexing & Synaptic Linking",
-		SyncFrequency: "432 Hz",
-		LatencyMs:     42,
-		SyncSpeedMbps: 12.5,
-		UptimePct:     99.9,
 		FilesByStatus: map[string]int{},
 	}
 
@@ -42,6 +35,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	resp.Status = "healthy"
 	for rows.Next() {
 		var status string
 		var count int
