@@ -38,6 +38,8 @@ func (s *Server) Routes(authMW Middleware) http.Handler {
 	protected.HandleFunc("GET /api/files/{id}", s.handleGetFile)
 	protected.HandleFunc("GET /api/tags", s.handleListTags)
 	protected.HandleFunc("GET /api/devices", s.handleListDevices)
+	protected.HandleFunc("GET /api/stats", s.handleStats)
+	protected.HandleFunc("GET /api/activity", s.handleActivity)
 
 	var h http.Handler = protected
 	if authMW != nil {
