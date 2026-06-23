@@ -35,20 +35,34 @@ func main() {
 
 	var authMW api.Middleware
 	var authMode string
-	switch {
-	case cfg.JWTSecret != "":
-		jwtAuth, err := auth.NewJWTAuth(cfg.JWTSecret)
+
+	var jwtAuth *auth.JWTAuth
+	if cfg.JWTSecret != "" {
+		var err error
+		jwtAuth, err = auth.NewJWTAuth(cfg.JWTSecret)
 		if err != nil {
 			log.Fatalf("jwt auth: %v", err)
 		}
-		authMW = jwtAuth.Middleware
-		authMode = "jwt"
-	case cfg.OIDCIssuerURL != "":
-		authenticator, err := auth.NewOIDCAuthenticator(context.Background(), cfg)
+	}
+
+	var oidcAuth *auth.OIDCAuthenticator
+	if cfg.OIDCIssuerURL != "" {
+		var err error
+		oidcAuth, err = auth.NewOIDCAuthenticator(context.Background(), cfg)
 		if err != nil {
 			log.Fatalf("oidc authenticator: %v", err)
 		}
-		authMW = authenticator.Middleware
+	}
+
+	switch {
+	case jwtAuth != nil && oidcAuth != nil:
+		authMW = auth.NewMultiAuthenticator(jwtAuth, oidcAuth).Middleware
+		authMode = "mixed"
+	case jwtAuth != nil:
+		authMW = jwtAuth.Middleware
+		authMode = "jwt"
+	case oidcAuth != nil:
+		authMW = oidcAuth.Middleware
 		authMode = "oidc"
 	default:
 		authMode = "none"

@@ -42,7 +42,7 @@ func NewJWTAuth(secret string) (*JWTAuth, error) {
 // Middleware validates the JWT and injects username/role into the context.
 func (j *JWTAuth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		username, role, err := j.authenticateRequest(r)
+		username, role, err := j.AuthenticateRequest(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
@@ -53,7 +53,8 @@ func (j *JWTAuth) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-func (j *JWTAuth) authenticateRequest(r *http.Request) (string, Role, error) {
+// AuthenticateRequest validates the Bearer token and returns the username and role.
+func (j *JWTAuth) AuthenticateRequest(r *http.Request) (string, Role, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		return "", "", fmt.Errorf("missing authorization header")
