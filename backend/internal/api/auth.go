@@ -54,7 +54,11 @@ func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		None: authNoneConfig{Enabled: noneEnabled},
 	}
 	if oidcEnabled {
-		response.OIDC.IssuerURL = cfg.OIDCIssuerURL
+		issuerURL := cfg.OIDCIssuerURL
+		if cfg.OIDCPublicIssuerURL != "" {
+			issuerURL = cfg.OIDCPublicIssuerURL
+		}
+		response.OIDC.IssuerURL = issuerURL
 		response.OIDC.ClientID = cfg.OIDCClientID
 		response.OIDC.UsernameClaim = cfg.OIDCUsernameClaim
 		response.OIDC.RedirectURI = cfg.OIDCRedirectURI
