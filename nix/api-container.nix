@@ -26,10 +26,7 @@ pkgs.dockerTools.buildLayeredImage {
       "PGHOST=postgres"
       "PGUSER=postgres"
       "PGDATABASE=engram"
-      "AUTH_MODE=none"
-      "OIDC_CLIENT_ID=mind-palace"
       "OIDC_USERNAME_CLAIM=preferred_username"
-      "OIDC_REDIRECT_URI=com.mindpalace.app://callback"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
     ];
   };

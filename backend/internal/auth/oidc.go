@@ -18,7 +18,10 @@ import (
 
 type contextKey string
 
-const ctxUsername contextKey = "username"
+const (
+	ctxUsername contextKey = "username"
+	ctxRole     contextKey = "role"
+)
 
 // OIDCAuthenticator validates Bearer tokens by calling the OIDC provider's
 // userinfo endpoint. Port of the Reliquary implementation — kept intentionally

@@ -27,28 +27,37 @@ func main() {
 	}
 	defer pool.Close()
 
-	var authMW api.Middleware
-	switch cfg.AuthMode {
-	case "oidc":
-		authenticator, err := auth.NewOIDCAuthenticator(context.Background(), cfg)
-		if err != nil {
-			log.Fatalf("oidc authenticator: %v", err)
-		}
-		authMW = authenticator.Middleware
-	case "", "none":
-		// No auth — leave requests unauthenticated. Owner-scoped queries will
-		// return only rows with NULL owner (effectively hidden).
-	default:
-		log.Fatalf("unknown AUTH_MODE: %q", cfg.AuthMode)
-	}
-
 	srv := api.NewServer(
 		pool,
 		api.WithConfig(cfg),
 		api.WithPresignURLTemplate(cfg.PresignURLTemplate),
 	)
+
+	var authMW api.Middleware
+	var authMode string
+	switch {
+	case cfg.JWTSecret != "":
+		jwtAuth, err := auth.NewJWTAuth(cfg.JWTSecret)
+		if err != nil {
+			log.Fatalf("jwt auth: %v", err)
+		}
+		authMW = jwtAuth.Middleware
+		authMode = "jwt"
+	case cfg.OIDCIssuerURL != "":
+		authenticator, err := auth.NewOIDCAuthenticator(context.Background(), cfg)
+		if err != nil {
+			log.Fatalf("oidc authenticator: %v", err)
+		}
+		authMW = authenticator.Middleware
+		authMode = "oidc"
+	default:
+		authMode = "none"
+		// No auth — leave requests unauthenticated. Owner-scoped queries will
+		// return only rows with NULL owner (effectively hidden).
+	}
+
 	addr := ":" + cfg.Port
-	log.Printf("Engram backend listening on %s (auth=%s)", addr, cfg.AuthMode)
+	log.Printf("Engram backend listening on %s (auth=%s)", addr, authMode)
 	if err := http.ListenAndServe(addr, srv.Routes(authMW)); err != nil {
 		log.Fatalf("http server: %v", err)
 	}

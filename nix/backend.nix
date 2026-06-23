@@ -6,7 +6,7 @@ pkgs.buildGoModule {
 
   src = ../backend;
 
-  vendorHash = "sha256-TegjL3FtAg2kOxRgxzO1PWHZQWd6gUwMEjk/sFKqA/o=";
+  vendorHash = "sha256-wF4jwDIWjNdseimRpeUUrwo0R4Jjm9nLsBl7dfStLlw=";
   subPackages = [ "." ];
 
   meta = {

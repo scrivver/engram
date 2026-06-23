@@ -38,9 +38,6 @@ func (s *Server) Routes(authMW Middleware) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
-	mux.HandleFunc("GET /api/auth/config", s.handleAuthConfig)
-	mux.HandleFunc("GET /api/auth/oidc/discovery", s.handleOIDCDiscovery)
-	mux.HandleFunc("POST /api/auth/oidc/token", s.handleOIDCToken)
 
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /api/files", s.handleListFiles)
