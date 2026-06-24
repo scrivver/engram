@@ -103,6 +103,13 @@ Mind Palace root repo.
 |----------|---------|-------------|
 | `PORT` | `8080` | HTTP listen port |
 | `PGHOST` | (required) | PostgreSQL unix socket directory |
+| `JWT_SECRET` | — | Shared HMAC secret for validating Reliquary-issued JWTs. Enables JWT auth when set. |
+| `OIDC_ISSUER_URL` | — | OIDC issuer URL. Enables OIDC token validation via userinfo when set. |
+| `OIDC_USERNAME_CLAIM` | `preferred_username` | Userinfo claim used as the owner identity |
+
+If **both** `JWT_SECRET` and `OIDC_ISSUER_URL` are set, the backend runs in
+mixed mode: it tries JWT validation first, then falls back to OIDC. If neither
+is set, requests are unauthenticated.
 
 ### Watcher
 | Variable | Default | Description |
