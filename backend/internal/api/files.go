@@ -104,10 +104,24 @@ func buildFileFilters(q url.Values, username string) (fileFilters, error) {
 	}
 
 	if search := q.Get("q"); search != "" {
-		// Full-text match against the generated tsv column (see migration 003).
+		// Two predicates, OR'd, because neither covers the search box alone.
+		//
+		// Full-text match against the generated tsv column (see migration 006,
+		// which is what makes the words inside a filename addressable at all).
 		// websearch_to_tsquery supports Google-style syntax: quoted phrases,
 		// `-term` exclusions, implicit AND across terms.
-		f.where("f.tsv @@ websearch_to_tsquery('simple', %s)", search)
+		//
+		// A tsquery only matches whole lexemes, though, and the client filters
+		// as the user types — so `presenta` would find nothing on its way to
+		// `presentation`. The substring match on the filename covers the
+		// half-typed term (and any infix, which a prefix query would miss);
+		// migration 006's trigram index keeps it off a sequential scan.
+		fts := f.placeholder(search)
+		like := f.placeholder(strings.ToLower(escapeLikePattern(search)))
+		f.conditions = append(f.conditions, fmt.Sprintf(
+			"(f.tsv @@ websearch_to_tsquery('simple', %s)"+
+				" OR lower(f.filename) LIKE '%%' || %s || '%%' ESCAPE '\\')",
+			fts, like))
 	}
 
 	if fileType != "" {

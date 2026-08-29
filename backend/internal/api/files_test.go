@@ -277,26 +277,28 @@ func TestBuildFileFiltersArgumentOrder(t *testing.T) {
 		"f.status = $1",
 		"f.owner = $2",
 		"d.name = $3",
-		"f.tsv @@ websearch_to_tsquery('simple', $4)",
+		// The search term binds twice: once raw for the tsquery, once escaped
+		// and lowercased for the substring fallback.
+		`(f.tsv @@ websearch_to_tsquery('simple', $4) OR lower(f.filename) LIKE '%' || $5 || '%' ESCAPE '\')`,
 		fileTypeFilter["pdf"],
-		"f.mtime >= $5",
-		"f.mtime <= $6",
-		"t.name IN ($7,$8)",
+		"f.mtime >= $6",
+		"f.mtime <= $7",
+		"t.name IN ($8,$9)",
 	}
 	if !reflect.DeepEqual(filters.conditions, wantConditions) {
 		t.Fatalf("conditions =\n%v\nwant\n%v", filters.conditions, wantConditions)
 	}
 
-	if len(filters.args) != 8 {
-		t.Fatalf("len(args) = %d, want 8", len(filters.args))
+	if len(filters.args) != 9 {
+		t.Fatalf("len(args) = %d, want 9", len(filters.args))
 	}
-	for i, want := range []any{"processing", "alice", "reliquary", "invoice"} {
+	for i, want := range []any{"processing", "alice", "reliquary", "invoice", "invoice"} {
 		if filters.args[i] != want {
 			t.Fatalf("args[%d] = %v, want %v", i, filters.args[i], want)
 		}
 	}
-	if filters.args[6] != "work" || filters.args[7] != "urgent" {
-		t.Fatalf("tag args = %v, %v, want work, urgent", filters.args[6], filters.args[7])
+	if filters.args[7] != "work" || filters.args[8] != "urgent" {
+		t.Fatalf("tag args = %v, %v, want work, urgent", filters.args[7], filters.args[8])
 	}
 	if filters.joins == "" {
 		t.Fatal("joins should include the tag join when tags are present")
