@@ -202,10 +202,17 @@ The backend API is read-only — it queries metadata from PostgreSQL. No file up
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/health` | Health check |
-| `GET` | `/api/files` | List/search files (`?q=`, `?tag=`, `?device=`, `?status=`) |
+| `GET` | `/api/files` | List/search files (`?q=`, `?tag=`, `?device=`, `?status=`, `?scope=`, `?path=`) |
 | `GET` | `/api/files/{id}` | Get file detail with extracted metadata and tags |
+| `GET` | `/api/folders` | List immediate subfolders of `?path=` with recursive file counts |
 | `GET` | `/api/tags` | List all tags with file counts |
 | `GET` | `/api/devices` | List all devices |
+
+Folder browsing uses `scope=folder&path=<dir>` on `/api/files` to fetch one
+directory's own files, paired with `/api/folders?path=<dir>` for its subfolders.
+The folder list is complete rather than paginated. Both derive directories from
+`filename`, the user-facing display path — never from `file_path`, which is
+storage identity.
 
 ## Configuration
 

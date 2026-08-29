@@ -130,10 +130,24 @@ S3 env vars (`STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_
 ## API Endpoints (read-only)
 
 - `GET /api/health` — Health check
-- `GET /api/files` — List/search (params: `q`, `tag`, `device`, `status`, `limit`, `offset`)
+- `GET /api/files` — List/search (params: `q`, `tag`, `device`, `status`, `type`, `from`, `to`, `sort`, `limit`, `offset`, `scope`, `path`)
 - `GET /api/files/{id}` — Full file detail with extracted_text and tags
+- `GET /api/folders` — Immediate subfolders of `path` with recursive file counts
 - `GET /api/tags` — All tags with file counts
 - `GET /api/devices` — All devices
+
+### Folder browsing
+
+`scope=folder` restricts `/api/files` to the direct children of `path`; `scope=all`
+(the default) ignores `path` and lists everything. `/api/folders` returns the
+complete, unpaginated set of subfolders for that directory — clients must not
+derive the folder tree from a page of files, which is what made the tree depend
+on scroll position.
+
+Both endpoints apply the same filters through one shared builder, so a folder's
+count can never disagree with the files it contains. Folders are derived from
+`filename` (the user-facing display path from the file-event contract), never
+from `file_path`, which is storage identity.
 
 ## Conventions
 

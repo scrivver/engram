@@ -28,6 +28,15 @@ type File struct {
 	DownloadURL   string    `json:"download_url,omitempty"`
 }
 
+// Folder is a directory derived from the display paths of a user's files. It
+// is computed per request and never stored. FileCount is recursive: every file
+// beneath Path, at any depth, matching the active filters.
+type Folder struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	FileCount int    `json:"file_count"`
+}
+
 type Tag struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`

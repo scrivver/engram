@@ -66,11 +66,18 @@ A read-only HTTP server that queries PostgreSQL and returns file metadata. It ha
 At startup it connects to PostgreSQL (via unix socket), runs embedded database migrations, and starts serving HTTP.
 
 **Endpoints:**
-- `GET /api/files` — list and search files by name, tag, device, or status
+- `GET /api/files` — list and search files by name, tag, device, or status; `scope=folder&path=<dir>` narrows it to one directory's direct children
 - `GET /api/files/{id}` — single file with full metadata including extracted text and tags
+- `GET /api/folders` — immediate subfolders of `path`, with recursive file counts
 - `GET /api/tags` — all tags with file counts
 - `GET /api/devices` — all registered devices
 - `GET /api/health` — liveness check
+
+Directory structure is derived from `filename`, which the file-event contract
+defines as the user-facing display path (`docs/myfile.pdf`), not from
+`file_path`, which is storage identity (`files/alice/2026/07/docs/myfile.pdf`).
+Prefix matching escapes LIKE metacharacters and is served by
+`idx_files_owner_filename`.
 
 Uses Go stdlib `net/http` with 1.22+ routing patterns. No external web framework.
 

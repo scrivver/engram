@@ -1,10 +1,10 @@
 {
   "event": "create",
-  "file_path": "files/alice/2026/06/report.pdf",
-  "filename": "report.pdf",
+  "file_path": "files/alice/2026/07/docs/myfile.pdf",
+  "filename": "docs/myfile.pdf",
   "size": 204800,
   "hash": "sha256:abcdef123456",
-  "mtime": "2026-06-15T12:00:00Z",
+  "mtime": "2026-07-12T12:00:00Z",
   "device_name": "reliquary",
   "storage_type": "s3"
 }

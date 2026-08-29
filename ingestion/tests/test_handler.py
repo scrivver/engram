@@ -21,6 +21,12 @@ class ParseMessageTest(unittest.TestCase):
                 parsed = handler._parse_message(fixture(event))
                 self.assertEqual(parsed["event"], event)
 
+    def test_create_fixture_uses_display_path_contract(self):
+        parsed = handler._parse_message(fixture("create"))
+
+        self.assertEqual(parsed["filename"], "docs/myfile.pdf")
+        self.assertEqual(parsed["file_path"], "files/alice/2026/07/docs/myfile.pdf")
+
     def test_rejects_unknown_event(self):
         message = json.loads(fixture("create"))
         message["event"] = "write"
@@ -56,6 +62,7 @@ class ParseMessageTest(unittest.TestCase):
         parsed = handler._parse_message(json.dumps(message).encode())
 
         self.assertEqual(parsed["file_path"], "files/alice/report.pdf")
+        self.assertEqual(parsed["filename"], "report.pdf")
         self.assertEqual(parsed["hash"], "legacy-etag")
 
 
@@ -81,11 +88,11 @@ class OnMessageTest(unittest.TestCase):
         self.assertEqual(upsert_file.call_count, 2)
         self.assertEqual(process.call_count, 2)
         upsert_file.assert_called_with(
-            file_path="files/alice/2026/06/report.pdf",
-            filename="report.pdf",
+            file_path="files/alice/2026/07/docs/myfile.pdf",
+            filename="docs/myfile.pdf",
             size=204800,
             hash_value="sha256:abcdef123456",
-            mtime="2026-06-15T12:00:00Z",
+            mtime="2026-07-12T12:00:00Z",
             device_name="reliquary",
             storage_type="s3",
             owner="alice",
@@ -116,6 +123,32 @@ class OnMessageTest(unittest.TestCase):
             "/srv/files/report.pdf",
             "/srv/files/report-final.pdf",
             "report-final.pdf",
+        )
+        self.channel.basic_ack.assert_called_once_with(delivery_tag=7)
+
+    @patch.object(handler.db, "rename_file")
+    def test_rename_preserves_folder_display_path(self, rename_file):
+        message = json.loads(fixture("rename"))
+        message.update(
+            {
+                "event": "rename",
+                "file_path": "files/alice/2026/07/docs/myfile-final.pdf",
+                "filename": "docs/myfile-final.pdf",
+                "device_name": "reliquary",
+                "storage_type": "s3",
+                "old_file_path": "files/alice/2026/07/docs/myfile.pdf",
+            }
+        )
+
+        handler.on_message(
+            self.channel, self.method, None, json.dumps(message).encode()
+        )
+
+        rename_file.assert_called_once_with(
+            "s3",
+            "files/alice/2026/07/docs/myfile.pdf",
+            "files/alice/2026/07/docs/myfile-final.pdf",
+            "docs/myfile-final.pdf",
         )
         self.channel.basic_ack.assert_called_once_with(delivery_tag=7)
 

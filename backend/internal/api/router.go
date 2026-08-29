@@ -1,14 +1,21 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/chunhou/engram/internal/config"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type dbQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 type Server struct {
-	db                 *pgxpool.Pool
+	db                 dbQuerier
 	presignURLTemplate string
 	cfg                *config.Config
 }
@@ -42,6 +49,7 @@ func (s *Server) Routes(authMW Middleware) http.Handler {
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /api/files", s.handleListFiles)
 	protected.HandleFunc("GET /api/files/{id}", s.handleGetFile)
+	protected.HandleFunc("GET /api/folders", s.handleListFolders)
 	protected.HandleFunc("GET /api/tags", s.handleListTags)
 	protected.HandleFunc("GET /api/devices", s.handleListDevices)
 	protected.HandleFunc("GET /api/stats", s.handleStats)

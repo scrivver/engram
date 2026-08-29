@@ -2,6 +2,30 @@
 
 All notable changes to Engram are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **API**: `GET /api/folders` returns the immediate subfolders of a display-path
+  prefix with recursive file counts. The response is complete rather than
+  paginated — clients previously derived the folder tree from whichever page of
+  files happened to be loaded, so folders were missing until scrolled into view
+  and could appear empty.
+- **API**: `GET /api/files` accepts `scope=folder` and `path`, restricting
+  results to the direct children of a directory. Omitting both preserves the
+  existing behavior and response shape exactly.
+- **Migration 005**: `idx_files_owner_filename` on `(owner, filename
+  text_pattern_ops)` to serve prefix matching. No row data is modified and the
+  migration is fully reversible. The opclass is redundant under this
+  deployment's C collation but keeps the index correct on a non-C database.
+
+### Changed
+
+- **API internals**: Filter construction shared by the file and folder queries
+  moved into one builder, so folder counts cannot disagree with folder
+  contents. Query assembly now has test coverage; previously the test double
+  discarded SQL entirely.
+
 ## [v0.2.0] - 2026-06-24
 
 ### Added
